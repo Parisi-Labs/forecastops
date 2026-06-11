@@ -296,36 +296,73 @@ async function renderRunView(runId) {
       ${metricCard("Coverage", metricLookup.coverage, "interval hit rate")}
       ${metricCard("Points", run.points_count, `${fmt(run.series_count, 0)} series`, true)}
     </div>
-    <div class="panel">
-      <div class="inspector-head">
-        <span class="panel-title">Forecast inspector</span>
-        ${seriesSelector}
-        <div class="legend">
-          <span class="l-forecast"><i></i>forecast</span>
-          <span class="l-actual"><i></i>actual</span>
-          <span class="l-benchmark"><i></i>benchmark</span>
-          <span class="l-interval"><i></i>interval</span>
+    <div class="run-layout">
+      <div class="run-main">
+        <div class="panel">
+          <div class="inspector-head">
+            <span class="panel-title">Forecast inspector</span>
+            ${seriesSelector}
+            <div class="legend">
+              <span class="l-forecast"><i></i>forecast</span>
+              <span class="l-actual"><i></i>actual</span>
+              <span class="l-benchmark"><i></i>benchmark</span>
+              <span class="l-interval"><i></i>interval</span>
+            </div>
+          </div>
+          <div id="chartGrid" class="chart-grid"></div>
+          <div id="gridNote" class="grid-note" hidden></div>
         </div>
+        <div class="tabs">
+          ${tabButton("metrics", `Metrics (${(run.metrics || []).length})`)}
+          ${tabButton("validation", `Validation (${(run.validation || []).length})`)}
+          ${tabButton("residuals", "Residuals")}
+          ${tabButton("artifacts", `Artifacts (${(run.artifacts || []).length})`)}
+        </div>
+        <div id="tabContent" class="tab-content"></div>
       </div>
-      <div id="chartGrid" class="chart-grid"></div>
-      <div id="gridNote" class="grid-note" hidden></div>
+      <aside class="run-rail">
+        <div class="panel">
+          <div class="panel-title" style="display:block;margin-bottom:10px">Run card</div>
+          ${kv({
+            Project: run.project_id,
+            Model: run.model_name,
+            Version: run.model_version,
+            Adapter: run.adapter_name,
+            Created: formatDate(run.created_at),
+            Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
+            Target: formatRange(run.target_start, run.target_end),
+            Series: fmt(run.series_count, 0),
+            Points: fmt(run.points_count, 0),
+            Validation: validationSummary(countBy(run.validation || [], "severity")),
+            Trace: run.trace_id,
+          })}
+        </div>
+        <div class="panel">
+          <div class="panel-title" style="display:block;margin-bottom:10px">Trace timeline</div>
+          ${traceTimeline(run.spans || [])}
+        </div>
+      </aside>
     </div>
-    <div class="tabs">
-      ${tabButton("metrics", `Metrics (${(run.metrics || []).length})`)}
-      ${tabButton("validation", `Validation (${(run.validation || []).length})`)}
-      ${tabButton("residuals", "Residuals")}
-      ${tabButton("artifacts", `Artifacts (${(run.artifacts || []).length})`)}
-      ${tabButton("details", "Details")}
-    </div>
-    <div id="tabContent" class="tab-content"></div>
   `;
   $("#copyRunId").addEventListener("click", async () => {
+    let copied = false;
     try {
       await navigator.clipboard.writeText(run.run_id);
-      $("#copyRunId").textContent = "copied";
-      setTimeout(() => { const btn = $("#copyRunId"); if (btn) btn.textContent = "copy"; }, 1200);
+      copied = true;
     } catch {
-      /* clipboard unavailable */
+      const scratch = document.createElement("textarea");
+      scratch.value = run.run_id;
+      scratch.style.position = "fixed";
+      scratch.style.opacity = "0";
+      document.body.appendChild(scratch);
+      scratch.select();
+      copied = document.execCommand("copy");
+      scratch.remove();
+    }
+    const btn = $("#copyRunId");
+    if (btn && copied) {
+      btn.textContent = "copied";
+      setTimeout(() => { const after = $("#copyRunId"); if (after) after.textContent = "copy"; }, 1200);
     }
   });
   const seriesFilter = $("#seriesFilter");
@@ -356,6 +393,7 @@ async function changeSeries(seriesId) {
 
 function renderRunTab() {
   const { run, residuals } = state.detail;
+  if (!["metrics", "validation", "residuals", "artifacts"].includes(state.runTab)) state.runTab = "metrics";
   document.querySelectorAll(".tabs button").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === state.runTab);
   });
@@ -368,38 +406,7 @@ function renderRunTab() {
     target.innerHTML = table(residuals || [], "No residuals available. Residuals require actuals to be captured alongside the forecast.");
   } else if (state.runTab === "artifacts") {
     target.innerHTML = table(run.artifacts || [], "No artifacts recorded.");
-  } else if (state.runTab === "details") {
-    renderDetailsTab(target);
   }
-}
-
-function renderDetailsTab(target) {
-  const { run } = state.detail;
-  const validationCounts = countBy(run.validation || [], "severity");
-  target.innerHTML = `
-    <div class="details-grid">
-      <div class="panel">
-        <div class="panel-title" style="display:block;margin-bottom:10px">Run</div>
-        ${kv({
-          Project: run.project_id,
-          Model: run.model_name,
-          Version: run.model_version,
-          Adapter: run.adapter_name,
-          Created: formatDate(run.created_at),
-          Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
-          Target: formatRange(run.target_start, run.target_end),
-          Series: fmt(run.series_count, 0),
-          Points: fmt(run.points_count, 0),
-          Validation: validationSummary(validationCounts),
-          Trace: run.trace_id,
-        })}
-      </div>
-      <div class="panel">
-        <div class="panel-title" style="display:block;margin-bottom:10px">Trace timeline</div>
-        ${traceTimeline(run.spans || [])}
-      </div>
-    </div>
-  `;
 }
 
 /* ---------- Projects ---------- */

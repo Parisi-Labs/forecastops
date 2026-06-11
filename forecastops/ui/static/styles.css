@@ -579,12 +579,24 @@ td .link {
   max-height: 340px;
 }
 
-/* Key-value + trace (Details tab) */
+/* Run detail layout: main column + data-card rail */
 
-.details-grid {
+.run-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 12px;
+  align-items: start;
+}
+
+.run-main {
+  min-width: 0;
+}
+
+.run-rail {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 12px;
 }
 
 .kv {
@@ -727,7 +739,11 @@ td .link {
   }
 
   .chart-grid,
-  .details-grid {
+  .run-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .run-rail {
+    position: static;
   }
 }
