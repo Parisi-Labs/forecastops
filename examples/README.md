@@ -8,3 +8,14 @@ python examples/generic_dataframe.py
 fops ui
 ```
 
+## Notebook
+
+[`quickstart.ipynb`](quickstart.ipynb) walks the full loop interactively —
+capture → metrics → validation → benchmark → diff → report/UI — and is
+committed with its outputs so it renders on GitHub:
+
+```bash
+pip install jupyter
+jupyter lab examples/quickstart.ipynb
+```
+
