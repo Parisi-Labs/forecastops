@@ -6,6 +6,19 @@ const state = {
   detail: null, // { run, points, residuals, series, selectedSeries }
 };
 
+const COLORS = {
+  forecast: "#4c8dff",
+  actual: "#fb923c",
+  benchmark: "#8b939e",
+  band: "rgba(76, 141, 255, .15)",
+  grid: "#1c2129",
+  axis: "#232a33",
+  tick: "#5c6470",
+  guide: "#8b939e",
+};
+
+const MAX_GRID_SERIES = 12;
+
 const $ = (selector) => document.querySelector(selector);
 
 const fmt = (value, digits = 3) => {
@@ -23,7 +36,6 @@ async function api(path) {
 async function boot() {
   const health = await api("/api/health");
   $("#storeInfo").textContent = health.store;
-  $("#storeInfo").title = `Store: ${health.store}`;
   $("#refreshButton").addEventListener("click", refresh);
   $("#projectFilter").addEventListener("change", renderRuns);
   $("#statusFilter").addEventListener("change", renderRuns);
@@ -56,6 +68,7 @@ async function refresh() {
 }
 
 function renderNoRuns() {
+  $("#crumbRun").textContent = "";
   $("#detail").innerHTML = `
     <div class="empty-state">
       <h2>No runs captured yet</h2>
@@ -71,7 +84,7 @@ fops.capture(
     cutoff=train_df["ds"].max(),
     actuals=actuals_df,
 )</pre>
-      <p class="hint">Runs are stored locally in the store shown in the header. Nothing leaves this machine.</p>
+      <p class="hint">Runs are stored locally in the store shown in the sidebar. Nothing leaves this machine.</p>
     </div>
   `;
 }
@@ -129,7 +142,7 @@ function renderRuns() {
   });
   const tbody = $("#runsTable tbody");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="13" style="color:var(--muted)">No runs match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" style="color:var(--muted)">No runs match the current filters.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -139,7 +152,6 @@ function renderRuns() {
         <td title="${escapeHtml(run.run_id)}">${escapeHtml(shortRun(run.run_id))}</td>
         <td>${escapeHtml(run.project_id || "–")}</td>
         <td>${escapeHtml(run.model_name || "–")}</td>
-        <td>${escapeHtml(run.adapter_name || "–")}</td>
         <td title="${escapeHtml(String(run.created_at || ""))}">${escapeHtml(formatDate(run.created_at))}</td>
         <td class="num">${escapeHtml(String(run.horizon_max ?? "–"))}</td>
         <td class="num">${fmt(run.points_count, 0)}</td>
@@ -168,6 +180,7 @@ async function selectRun(runId) {
   ]);
   const series = [...new Set(points.map((point) => point.series_id).filter((s) => s !== null && s !== undefined))].map(String).sort();
   state.detail = { run, points, residuals, series, selectedSeries: "" };
+  $("#crumbRun").textContent = ` / ${shortRun(runId)}`;
   renderDetail();
 }
 
@@ -181,23 +194,21 @@ async function changeSeries(seriesId) {
   ]);
   state.detail.points = points;
   state.detail.residuals = residuals;
-  drawForecastChart($("#forecastChart"), points);
+  renderCharts();
   if (state.activeTab === "residuals") renderTab();
 }
 
 function renderDetail() {
-  const { run, points, series, selectedSeries } = state.detail;
+  const { run, series, selectedSeries } = state.detail;
   const metricLookup = Object.fromEntries(
     (run.metrics || [])
       .filter((metric) => metric.slice_name === null)
       .map((metric) => [metric.metric_name, metric.metric_value])
   );
-  const validationCounts = countBy(run.validation || [], "severity");
   const seriesSelector =
     series.length > 1
-      ? `<label for="seriesFilter">Series</label>
-         <select id="seriesFilter">
-           <option value="">All (${series.length})</option>
+      ? `<select id="seriesFilter" aria-label="Filter chart by series">
+           <option value="">All series (${series.length})</option>
            ${series.map((s) => `<option value="${escapeHtml(s)}" ${s === selectedSeries ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
          </select>`
       : "";
@@ -205,63 +216,47 @@ function renderDetail() {
     <div class="detail-head">
       <h2>${escapeHtml(run.model_name || run.project_id || "Run detail")}</h2>
       <span class="run-id">${escapeHtml(run.run_id)}</span>
-      <button type="button" class="copy-btn" id="copyRunId">Copy ID</button>
+      <button type="button" class="copy-btn" id="copyRunId">copy</button>
       <span class="status ${escapeHtml(run.status || "")}">${escapeHtml((run.status || "").toUpperCase())}</span>
+      <span class="meta">captured ${escapeHtml(formatDate(run.created_at))}</span>
     </div>
     <div class="summary-grid">
-      ${metricCard("MAE", metricLookup.mae)}
-      ${metricCard("RMSE", metricLookup.rmse)}
-      ${metricCard("WAPE", metricLookup.wape)}
-      ${metricCard("Bias", metricLookup.bias)}
-      ${metricCard("Coverage", metricLookup.coverage)}
-      ${metricCard("Points", run.points_count, 0)}
+      ${metricCard("MAE", metricLookup.mae, "mean abs error")}
+      ${metricCard("RMSE", metricLookup.rmse, "root mean sq error")}
+      ${metricCard("WAPE", metricLookup.wape, "weighted abs pct error")}
+      ${metricCard("Bias", metricLookup.bias, "mean error")}
+      ${metricCard("Coverage", metricLookup.coverage, "interval hit rate")}
+      ${metricCard("Points", run.points_count, `${run.series_count ?? 1} series`, true)}
     </div>
-    <div class="detail-grid">
-      <div>
-        <div class="chart-panel">
-          <div class="panel-toolbar">${seriesSelector}</div>
-          <div id="forecastChart" class="chart"></div>
-          <div class="legend">
-            <span class="l-forecast"><i></i>forecast</span>
-            <span class="l-actual"><i></i>actual</span>
-            <span class="l-benchmark"><i></i>benchmark</span>
-            <span class="l-interval"><i></i>interval</span>
-          </div>
+    <div class="panel">
+      <div class="inspector-head">
+        <span class="panel-title">Forecast inspector</span>
+        ${seriesSelector}
+        <div class="legend">
+          <span class="l-forecast"><i></i>forecast</span>
+          <span class="l-actual"><i></i>actual</span>
+          <span class="l-benchmark"><i></i>benchmark</span>
+          <span class="l-interval"><i></i>interval</span>
         </div>
-        <div class="tabs">
-          ${tabButton("metrics", `Metrics (${(run.metrics || []).length})`)}
-          ${tabButton("validation", `Validation (${(run.validation || []).length})`)}
-          ${tabButton("residuals", "Residuals")}
-          ${tabButton("artifacts", `Artifacts (${(run.artifacts || []).length})`)}
-          ${tabButton("compare", "Compare")}
-        </div>
-        <div id="tabContent" class="tab-content"></div>
       </div>
-      <div class="panel">
-        <h3>Run details</h3>
-        ${kv({
-          Project: run.project_id,
-          Model: run.model_name,
-          Version: run.model_version,
-          Adapter: run.adapter_name,
-          Created: formatDate(run.created_at),
-          Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
-          Target: formatRange(run.target_start, run.target_end),
-          Series: run.series_count,
-          Points: run.points_count,
-          Validation: validationSummary(validationCounts),
-          Trace: run.trace_id,
-        })}
-        <h3 style="margin-top:18px">Trace timeline</h3>
-        ${traceTimeline(run.spans || [])}
-      </div>
+      <div id="chartGrid" class="chart-grid"></div>
+      <div id="gridNote" class="grid-note" hidden></div>
     </div>
+    <div class="tabs">
+      ${tabButton("metrics", `Metrics (${(run.metrics || []).length})`)}
+      ${tabButton("validation", `Validation (${(run.validation || []).length})`)}
+      ${tabButton("residuals", "Residuals")}
+      ${tabButton("artifacts", `Artifacts (${(run.artifacts || []).length})`)}
+      ${tabButton("details", "Details")}
+      ${tabButton("compare", "Compare")}
+    </div>
+    <div id="tabContent" class="tab-content"></div>
   `;
   $("#copyRunId").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(run.run_id);
-      $("#copyRunId").textContent = "Copied";
-      setTimeout(() => { const btn = $("#copyRunId"); if (btn) btn.textContent = "Copy ID"; }, 1200);
+      $("#copyRunId").textContent = "copied";
+      setTimeout(() => { const btn = $("#copyRunId"); if (btn) btn.textContent = "copy"; }, 1200);
     } catch {
       /* clipboard unavailable */
     }
@@ -274,8 +269,198 @@ function renderDetail() {
       renderTab();
     });
   });
-  drawForecastChart($("#forecastChart"), points);
+  renderCharts();
   renderTab();
+}
+
+/* Forecast inspector: one chart per series, like a model-eval gallery. */
+function renderCharts() {
+  const grid = $("#chartGrid");
+  const note = $("#gridNote");
+  if (!grid) return;
+  const { points } = state.detail;
+  const clean = points.filter(
+    (point) =>
+      point.yhat !== null &&
+      point.yhat !== undefined &&
+      Number.isFinite(new Date(point.target_time).getTime())
+  );
+  if (!clean.length) {
+    grid.className = "chart-grid single";
+    grid.innerHTML = `<div class="empty-state">No chartable points in this run.</div>`;
+    note.hidden = true;
+    return;
+  }
+  const groups = new Map();
+  clean.forEach((point) => {
+    const key = String(point.series_id ?? "");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(point);
+  });
+  groups.forEach((group) =>
+    group.sort((a, b) => new Date(a.target_time).getTime() - new Date(b.target_time).getTime())
+  );
+
+  const entries = [...groups.entries()];
+  const single = entries.length === 1;
+  const shown = entries.slice(0, MAX_GRID_SERIES);
+  grid.className = `chart-grid ${single ? "single" : ""}`;
+  grid.innerHTML = shown
+    .map(
+      ([seriesId], index) => `
+      <div class="chart-cell">
+        <div class="chart-cell-head">
+          <span class="series-name" title="${escapeHtml(seriesId)}">${escapeHtml(seriesId || "series")}</span>
+          <span class="series-metric">${seriesMetricLabel(shown[index][1])}</span>
+        </div>
+        <div class="chart" data-index="${index}" style="height:${single ? 320 : 180}px"></div>
+      </div>
+    `
+    )
+    .join("");
+  shown.forEach(([, group], index) => {
+    drawSeriesChart(grid.querySelector(`.chart[data-index="${index}"]`), group, { compact: !single });
+  });
+  if (entries.length > MAX_GRID_SERIES) {
+    note.hidden = false;
+    note.textContent = `Showing ${MAX_GRID_SERIES} of ${entries.length} series — pick one from the series dropdown to inspect the rest.`;
+  } else {
+    note.hidden = true;
+  }
+}
+
+function seriesMetricLabel(group) {
+  const scored = group.filter((point) => point.actual !== null && point.actual !== undefined);
+  if (!scored.length) return `${group.length} pts`;
+  const absErr = scored.reduce((sum, point) => sum + Math.abs(Number(point.yhat) - Number(point.actual)), 0);
+  const absActual = scored.reduce((sum, point) => sum + Math.abs(Number(point.actual)), 0);
+  if (absActual > 0) return `WAPE ${(absErr / absActual).toFixed(3)}`;
+  return `MAE ${(absErr / scored.length).toFixed(3)}`;
+}
+
+function drawSeriesChart(el, group, { compact = false } = {}) {
+  if (!el) return;
+  const width = el.clientWidth || 600;
+  const height = el.clientHeight || (compact ? 180 : 320);
+  const pad = { top: 8, right: 10, bottom: 20, left: 46 };
+  const values = [];
+  group.forEach((point) =>
+    ["yhat", "actual", "benchmark_yhat", "yhat_lower", "yhat_upper"].forEach((key) => {
+      if (point[key] !== null && point[key] !== undefined) values.push(Number(point[key]));
+    })
+  );
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const times = group.map((point) => new Date(point.target_time).getTime());
+  const tMin = Math.min(...times);
+  const tMax = Math.max(...times);
+  const tSpan = tMax - tMin || 1;
+  const x = (time) => pad.left + ((time - tMin) / tSpan) * innerW;
+  const y = (value) => pad.top + innerH - ((value - min) / span) * innerH;
+  const path = (key) => {
+    let d = "";
+    group.forEach((point) => {
+      if (point[key] === null || point[key] === undefined) return;
+      d += `${d ? "L" : "M"}${x(new Date(point.target_time).getTime()).toFixed(1)},${y(Number(point[key])).toFixed(1)}`;
+    });
+    return d;
+  };
+
+  const tickSteps = compact ? [0, 2, 4] : [0, 1, 2, 3, 4];
+  const yTicks = tickSteps.map((i) => min + (span * i) / 4);
+  const xTickTimes = tickSteps.map((i) => tMin + (tSpan * i) / 4);
+  const gridLines = yTicks
+    .map((tick) => `<line x1="${pad.left}" y1="${y(tick).toFixed(1)}" x2="${width - pad.right}" y2="${y(tick).toFixed(1)}" stroke="${COLORS.grid}"></line>`)
+    .join("");
+  const yLabels = yTicks
+    .map((tick) => `<text x="${pad.left - 7}" y="${(y(tick) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${COLORS.tick}" font-family="monospace">${escapeHtml(fmtTick(tick))}</text>`)
+    .join("");
+  const xLabels = xTickTimes
+    .map((time, index) => {
+      const anchor = index === 0 ? "start" : index === xTickTimes.length - 1 ? "end" : "middle";
+      const tx = index === 0 ? pad.left : x(time);
+      return `<text x="${tx.toFixed(1)}" y="${height - 6}" text-anchor="${anchor}" font-size="9" fill="${COLORS.tick}" font-family="monospace">${escapeHtml(formatTickDate(time))}</text>`;
+    })
+    .join("");
+
+  el.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Forecast versus actual chart">
+      ${gridLines}
+      <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="${COLORS.axis}"></line>
+      ${intervalBand(group, x, y)}
+      <path d="${path("benchmark_yhat")}" fill="none" stroke="${COLORS.benchmark}" stroke-width="1" stroke-dasharray="4 4"></path>
+      <path d="${path("actual")}" fill="none" stroke="${COLORS.actual}" stroke-width="1.4"></path>
+      <path d="${path("yhat")}" fill="none" stroke="${COLORS.forecast}" stroke-width="1.6"></path>
+      <line class="chart-guide" y1="${pad.top}" y2="${height - pad.bottom}" stroke="${COLORS.guide}" stroke-width="1" stroke-dasharray="2 3" visibility="hidden"></line>
+      ${yLabels}
+      ${xLabels}
+    </svg>
+    <div class="chart-tooltip"></div>
+  `;
+  attachChartTooltip(el, group, { x, pad, innerW, tMin, tSpan });
+}
+
+function attachChartTooltip(el, group, geometry) {
+  const tooltip = el.querySelector(".chart-tooltip");
+  const guide = el.querySelector(".chart-guide");
+  el.onmousemove = (event) => {
+    const rect = el.getBoundingClientRect();
+    const mx = event.clientX - rect.left;
+    const ratio = (mx - geometry.pad.left) / geometry.innerW;
+    if (ratio < -0.02 || ratio > 1.02) {
+      tooltip.style.display = "none";
+      guide.setAttribute("visibility", "hidden");
+      return;
+    }
+    const targetTime = geometry.tMin + Math.max(0, Math.min(1, ratio)) * geometry.tSpan;
+    let nearest = group[0];
+    let bestDistance = Infinity;
+    group.forEach((point) => {
+      const distance = Math.abs(new Date(point.target_time).getTime() - targetTime);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        nearest = point;
+      }
+    });
+    const px = geometry.x(new Date(nearest.target_time).getTime());
+    guide.setAttribute("x1", px);
+    guide.setAttribute("x2", px);
+    guide.setAttribute("visibility", "visible");
+    const body = [
+      ["forecast", "yhat"],
+      ["actual", "actual"],
+      ["benchmark", "benchmark_yhat"],
+      ["lower", "yhat_lower"],
+      ["upper", "yhat_upper"],
+    ]
+      .filter(([, key]) => nearest[key] !== null && nearest[key] !== undefined)
+      .map(([label, key]) => `<div><span>${label}</span><strong>${fmt(nearest[key])}</strong></div>`)
+      .join("");
+    tooltip.innerHTML = `<div><strong>${escapeHtml(formatDate(nearest.target_time))}</strong></div>${body}`;
+    tooltip.style.display = "block";
+    tooltip.style.left = `${Math.min(px + 12, rect.width - tooltip.offsetWidth - 4)}px`;
+    tooltip.style.top = `${Math.max(2, event.clientY - rect.top - tooltip.offsetHeight - 10)}px`;
+  };
+  el.onmouseleave = () => {
+    tooltip.style.display = "none";
+    guide.setAttribute("visibility", "hidden");
+  };
+}
+
+function intervalBand(points, x, y) {
+  const usable = points.filter((point) => point.yhat_lower !== null && point.yhat_upper !== null);
+  if (!usable.length) return "";
+  const px = (point) => x(new Date(point.target_time).getTime()).toFixed(1);
+  const top = usable.map((point, index) => `${index ? "L" : "M"}${px(point)},${y(Number(point.yhat_upper)).toFixed(1)}`).join("");
+  const bottom = usable
+    .slice()
+    .reverse()
+    .map((point) => `L${px(point)},${y(Number(point.yhat_lower)).toFixed(1)}`)
+    .join("");
+  return `<path d="${top}${bottom}Z" fill="${COLORS.band}"></path>`;
 }
 
 function renderTab() {
@@ -292,9 +477,40 @@ function renderTab() {
     target.innerHTML = table(residuals || [], "No residuals available. Residuals require actuals to be captured alongside the forecast.");
   } else if (state.activeTab === "artifacts") {
     target.innerHTML = table(run.artifacts || [], "No artifacts recorded.");
+  } else if (state.activeTab === "details") {
+    renderDetailsTab(target);
   } else if (state.activeTab === "compare") {
     renderCompareTab(target);
   }
+}
+
+function renderDetailsTab(target) {
+  const { run } = state.detail;
+  const validationCounts = countBy(run.validation || [], "severity");
+  target.innerHTML = `
+    <div class="details-grid">
+      <div class="panel">
+        <div class="panel-title" style="display:block;margin-bottom:10px">Run</div>
+        ${kv({
+          Project: run.project_id,
+          Model: run.model_name,
+          Version: run.model_version,
+          Adapter: run.adapter_name,
+          Created: formatDate(run.created_at),
+          Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
+          Target: formatRange(run.target_start, run.target_end),
+          Series: fmt(run.series_count, 0),
+          Points: fmt(run.points_count, 0),
+          Validation: validationSummary(validationCounts),
+          Trace: run.trace_id,
+        })}
+      </div>
+      <div class="panel">
+        <div class="panel-title" style="display:block;margin-bottom:10px">Trace timeline</div>
+        ${traceTimeline(run.spans || [])}
+      </div>
+    </div>
+  `;
 }
 
 function renderCompareTab(target) {
@@ -354,179 +570,11 @@ function renderCompareTab(target) {
   });
 }
 
-function drawForecastChart(el, points) {
-  if (!el) return;
-  const clean = points.filter(
-    (point) =>
-      point.yhat !== null &&
-      point.yhat !== undefined &&
-      Number.isFinite(new Date(point.target_time).getTime())
-  );
-  if (!clean.length) {
-    el.innerHTML = `<div class="empty-state">No chartable points in this run.</div>`;
-    return;
-  }
-  const width = el.clientWidth || 900;
-  const height = el.clientHeight || 340;
-  const pad = { top: 12, right: 16, bottom: 26, left: 56 };
-  const values = [];
-  clean.forEach((point) =>
-    ["yhat", "actual", "benchmark_yhat", "yhat_lower", "yhat_upper"].forEach((key) => {
-      if (point[key] !== null && point[key] !== undefined) values.push(Number(point[key]));
-    })
-  );
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const innerW = width - pad.left - pad.right;
-  const innerH = height - pad.top - pad.bottom;
-  const times = clean.map((point) => new Date(point.target_time).getTime());
-  const tMin = Math.min(...times);
-  const tMax = Math.max(...times);
-  const tSpan = tMax - tMin || 1;
-  const x = (time) => pad.left + ((time - tMin) / tSpan) * innerW;
-  const y = (value) => pad.top + innerH - ((value - min) / span) * innerH;
-
-  // One polyline per series so multi-series runs do not get stitched into a single line.
-  const groups = new Map();
-  clean.forEach((point) => {
-    const key = String(point.series_id ?? "");
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(point);
-  });
-  groups.forEach((group) =>
-    group.sort((a, b) => new Date(a.target_time).getTime() - new Date(b.target_time).getTime())
-  );
-
-  const path = (group, key) => {
-    let d = "";
-    group.forEach((point) => {
-      if (point[key] === null || point[key] === undefined) return;
-      d += `${d ? "L" : "M"}${x(new Date(point.target_time).getTime()).toFixed(1)},${y(Number(point[key])).toFixed(1)}`;
-    });
-    return d;
-  };
-  const lines = [...groups.values()]
-    .map(
-      (group) => `
-      ${intervalBand(group, x, y)}
-      <path d="${path(group, "benchmark_yhat")}" fill="none" stroke="#9b9b9b" stroke-width="1.5" stroke-dasharray="5 4"></path>
-      <path d="${path(group, "actual")}" fill="none" stroke="#111111" stroke-width="1.8"></path>
-      <path d="${path(group, "yhat")}" fill="none" stroke="#2563eb" stroke-width="2"></path>
-    `
-    )
-    .join("");
-
-  const yTicks = [0, 1, 2, 3, 4].map((i) => min + (span * i) / 4);
-  const xTickTimes = [...new Set([0, 1, 2, 3, 4].map((i) => tMin + (tSpan * i) / 4))];
-  const gridLines = yTicks
-    .map((tick) => `<line x1="${pad.left}" y1="${y(tick).toFixed(1)}" x2="${width - pad.right}" y2="${y(tick).toFixed(1)}" stroke="#f0f0f0"></line>`)
-    .join("");
-  const yLabels = yTicks
-    .map((tick) => `<text x="${pad.left - 8}" y="${(y(tick) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="#9b9b9b" font-family="monospace">${escapeHtml(fmtTick(tick))}</text>`)
-    .join("");
-  const xLabels = xTickTimes
-    .map((time) => `<text x="${x(time).toFixed(1)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="#9b9b9b" font-family="monospace">${escapeHtml(formatTickDate(time))}</text>`)
-    .join("");
-
-  el.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Forecast versus actual chart">
-      ${gridLines}
-      <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#e4e4e4"></line>
-      <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#e4e4e4"></line>
-      ${lines}
-      <line id="chartGuide" y1="${pad.top}" y2="${height - pad.bottom}" stroke="#111" stroke-width="1" stroke-dasharray="2 3" visibility="hidden"></line>
-      ${yLabels}
-      ${xLabels}
-    </svg>
-    <div class="chart-tooltip" id="chartTooltip"></div>
-  `;
-  attachChartTooltip(el, groups, { x, pad, width, innerW, tMin, tSpan });
-}
-
-function attachChartTooltip(el, groups, geometry) {
-  const tooltip = el.querySelector("#chartTooltip");
-  const guide = el.querySelector("#chartGuide");
-  const multi = groups.size > 1;
-  el.onmousemove = (event) => {
-    const rect = el.getBoundingClientRect();
-    const mx = event.clientX - rect.left;
-    const ratio = (mx - geometry.pad.left) / geometry.innerW;
-    if (ratio < -0.02 || ratio > 1.02) {
-      tooltip.style.display = "none";
-      guide.setAttribute("visibility", "hidden");
-      return;
-    }
-    const targetTime = geometry.tMin + Math.max(0, Math.min(1, ratio)) * geometry.tSpan;
-    // Nearest point per series at the hovered time.
-    const nearest = [...groups.entries()].map(([seriesId, group]) => {
-      let best = group[0];
-      let bestDistance = Infinity;
-      group.forEach((point) => {
-        const distance = Math.abs(new Date(point.target_time).getTime() - targetTime);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = point;
-        }
-      });
-      return [seriesId, best];
-    });
-    const anchor = nearest[0][1];
-    const px = geometry.x(new Date(anchor.target_time).getTime());
-    guide.setAttribute("x1", px);
-    guide.setAttribute("x2", px);
-    guide.setAttribute("visibility", "visible");
-    let body;
-    if (multi) {
-      body = nearest
-        .slice(0, 8)
-        .map(
-          ([seriesId, point]) =>
-            `<div><span>${escapeHtml(seriesId)}</span><strong>${fmt(point.yhat)}${
-              point.actual !== null && point.actual !== undefined ? ` / ${fmt(point.actual)}` : ""
-            }</strong></div>`
-        )
-        .join("");
-      if (nearest.length > 8) body += `<div><span>… ${nearest.length - 8} more series</span></div>`;
-      body = `<div><span>series</span><strong>forecast / actual</strong></div>${body}`;
-    } else {
-      body = [
-        ["forecast", "yhat"],
-        ["actual", "actual"],
-        ["benchmark", "benchmark_yhat"],
-        ["lower", "yhat_lower"],
-        ["upper", "yhat_upper"],
-      ]
-        .filter(([, key]) => anchor[key] !== null && anchor[key] !== undefined)
-        .map(([label, key]) => `<div><span>${label}</span><strong>${fmt(anchor[key])}</strong></div>`)
-        .join("");
-    }
-    tooltip.innerHTML = `<div><strong>${escapeHtml(formatDate(anchor.target_time))}</strong></div>${body}`;
-    tooltip.style.display = "block";
-    tooltip.style.left = `${Math.min(px + 12, rect.width - tooltip.offsetWidth - 4)}px`;
-    tooltip.style.top = `${Math.max(4, event.clientY - rect.top - tooltip.offsetHeight - 10)}px`;
-  };
-  el.onmouseleave = () => {
-    tooltip.style.display = "none";
-    guide.setAttribute("visibility", "hidden");
-  };
-}
-
-function intervalBand(points, x, y) {
-  const usable = points.filter((point) => point.yhat_lower !== null && point.yhat_upper !== null);
-  if (!usable.length) return "";
-  const px = (point) => x(new Date(point.target_time).getTime()).toFixed(1);
-  const top = usable.map((point, index) => `${index ? "L" : "M"}${px(point)},${y(Number(point.yhat_upper)).toFixed(1)}`).join("");
-  const bottom = usable
-    .slice()
-    .reverse()
-    .map((point) => `L${px(point)},${y(Number(point.yhat_lower)).toFixed(1)}`)
-    .join("");
-  return `<path d="${top}${bottom}Z" fill="rgba(37, 99, 235, .1)"></path>`;
-}
-
-function metricCard(label, value, digits = 3) {
-  return `<div class="metric-card"><span>${escapeHtml(label)}</span><strong>${fmt(value, digits)}</strong></div>`;
+function metricCard(label, value, caption = "", neutral = false) {
+  const digits = neutral ? 0 : 3;
+  return `<div class="metric-card ${neutral ? "neutral" : ""}"><span>${escapeHtml(label)}</span><strong>${fmt(value, digits)}</strong>${
+    caption ? `<small>${escapeHtml(caption)}</small>` : ""
+  }</div>`;
 }
 
 function tabButton(tab, label) {
@@ -644,7 +692,7 @@ let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    if (state.detail) drawForecastChart($("#forecastChart"), state.detail.points);
+    if (state.detail) renderCharts();
   }, 150);
 });
 
