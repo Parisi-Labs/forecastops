@@ -29,7 +29,7 @@ class ForecastSchema:
     extra_columns: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "ForecastSchema | None":
+    def from_dict(cls, data: dict[str, Any] | None) -> ForecastSchema | None:
         if data is None:
             return None
         allowed = {field.name for field in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]

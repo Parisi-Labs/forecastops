@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
-
-import forecastops as fops
-
 from _synthetic import daily_demand
 
+import forecastops as fops
 
 history = daily_demand(series_id="homepage")
 cutoff = history["ds"].max()

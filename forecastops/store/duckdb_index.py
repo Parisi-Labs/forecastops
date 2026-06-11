@@ -236,7 +236,7 @@ def summarize_frame(frame) -> dict[str, Any]:
         "horizon_min": frame["horizon"].min() if "horizon" in frame else None,
         "horizon_max": frame["horizon"].max() if "horizon" in frame else None,
         "series_count": int(frame["series_id"].nunique()),
-        "points_count": int(len(frame)),
+        "points_count": len(frame),
     }
 
 

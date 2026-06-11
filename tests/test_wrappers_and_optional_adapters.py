@@ -52,8 +52,9 @@ def test_model_wrapper_preserves_predict_return(isolated_store: Path) -> None:
 
 def test_darts_like_adapter() -> None:
     class TimeSeries:
-        time_index = pd.date_range("2026-01-02", periods=2)
-        components = ["component-a"]
+        def __init__(self) -> None:
+            self.time_index = pd.date_range("2026-01-02", periods=2)
+            self.components = ["component-a"]
 
         def values(self):
             return np.array([1.0, 2.0])
@@ -113,4 +114,3 @@ def test_metric_emitter_uses_safe_names() -> None:
         "forecast.horizon.bucket": "6-24h",
         "forecast.benchmark.name": "prod",
     }
-

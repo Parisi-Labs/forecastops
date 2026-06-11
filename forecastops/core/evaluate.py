@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -131,7 +130,7 @@ def compute_metrics(
                     slice_name=slice_name,
                     slice_value=slice_value,
                     series_group=slice_value if slice_name == "series_group" else None,
-                    points_count=int(len(group)),
+                    points_count=len(group),
                     created_at=utc_now(),
                 )
             )

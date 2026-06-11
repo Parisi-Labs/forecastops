@@ -71,7 +71,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
-ignore = ["B008"]
+ignore = ["B008", "E501"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -79,4 +79,3 @@ warn_unused_configs = true
 ignore_missing_imports = true
 strict_optional = true
 disallow_untyped_defs = false
-

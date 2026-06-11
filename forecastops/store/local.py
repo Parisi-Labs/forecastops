@@ -10,7 +10,7 @@ class LocalStore:
     root: Path
 
     @classmethod
-    def from_path(cls, path: str | Path | None = None) -> "LocalStore":
+    def from_path(cls, path: str | Path | None = None) -> LocalStore:
         if path is None:
             path = os.environ.get("FOPS_LOCAL_STORE", ".forecastops")
         return cls(Path(path).expanduser().resolve())

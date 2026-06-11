@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import forecastops as fops
-from forecastops.core.report import report
-
 from _synthetic import daily_demand, forecast_from_history
 
+import forecastops as fops
+from forecastops.core.report import report
 
 history = daily_demand()
 forecast_df, actuals_df = forecast_from_history(history)

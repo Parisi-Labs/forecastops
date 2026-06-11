@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import os
 
-import forecastops as fops
-
 from _synthetic import daily_demand, forecast_from_history
 
+import forecastops as fops
 
 os.environ["FOPS_OTEL_ENABLED"] = "true"
 

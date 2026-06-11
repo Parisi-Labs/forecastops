@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import forecastops as fops
-
 from _synthetic import daily_demand, forecast_from_history
 
+import forecastops as fops
 
 for region, seed in [("north", 1), ("south", 2), ("west", 3)]:
     history = daily_demand(series_id=f"sku-{region}", seed=seed)

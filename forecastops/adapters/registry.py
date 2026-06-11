@@ -3,8 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from forecastops.adapters.base import ForecastAdapter
-from forecastops.adapters.dataframe import ArrayAdapter, GenericDataFrameAdapter, SchemaDataFrameAdapter
 from forecastops.adapters.darts import DartsAdapter
+from forecastops.adapters.dataframe import (
+    ArrayAdapter,
+    GenericDataFrameAdapter,
+    SchemaDataFrameAdapter,
+)
 from forecastops.adapters.gluonts import GluonTSAdapter
 from forecastops.adapters.nixtla import NixtlaAdapter
 from forecastops.adapters.prophet import ProphetAdapter

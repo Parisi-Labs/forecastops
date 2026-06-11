@@ -5,7 +5,6 @@ import pandas as pd
 
 import forecastops as fops
 
-
 rng = np.random.default_rng(12)
 cutoff = pd.Timestamp("2026-04-30")
 rows = []

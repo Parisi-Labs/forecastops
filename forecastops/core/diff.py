@@ -67,8 +67,8 @@ def _frame_and_id(run: ForecastRun | pd.DataFrame | str | Path) -> tuple[pd.Data
 
 def _forecast_deltas(base: pd.DataFrame, candidate: pd.DataFrame) -> pd.DataFrame:
     keys = ["series_id", "cutoff_time", "target_time"]
-    merged = base[keys + ["yhat"]].merge(
-        candidate[keys + ["yhat"]],
+    merged = base[[*keys, "yhat"]].merge(
+        candidate[[*keys, "yhat"]],
         on=keys,
         how="inner",
         suffixes=("_base", "_candidate"),
@@ -76,4 +76,3 @@ def _forecast_deltas(base: pd.DataFrame, candidate: pd.DataFrame) -> pd.DataFram
     merged["forecast_delta"] = merged["yhat_candidate"] - merged["yhat_base"]
     merged["abs_forecast_delta"] = merged["forecast_delta"].abs()
     return merged.sort_values("abs_forecast_delta", ascending=False)
-

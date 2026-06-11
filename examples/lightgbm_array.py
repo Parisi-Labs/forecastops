@@ -5,7 +5,6 @@ import pandas as pd
 
 import forecastops as fops
 
-
 cutoff = pd.Timestamp("2026-05-01")
 target_time = pd.date_range(cutoff + pd.Timedelta(hours=1), periods=24, freq="h")
 preds = np.linspace(50, 60, len(target_time)) + np.sin(np.arange(len(target_time)))
