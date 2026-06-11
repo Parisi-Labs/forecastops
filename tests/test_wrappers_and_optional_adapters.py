@@ -13,6 +13,7 @@ from forecastops.otel.metrics import ForecastMetricEmitter, metric_name
 
 def test_forecast_decorator_returns_run(isolated_store: Path) -> None:
     @fops.forecast(
+        return_run=True,
         project="decorator-test",
         series_id="s",
         cutoff=lambda ctx: pd.Timestamp("2026-01-01"),

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from forecastops.core.run import CaptureContext, NormalizedForecast
-from forecastops.core.schema import ForecastSchema, quantile_column_name
+from forecastops.core.schema import QUANTILE_COLUMN_PATTERN, ForecastSchema, quantile_column_name
 
 
 def normalize_dataframe(
@@ -93,7 +93,7 @@ def normalize_dataframe(
             if source in df and target not in out:
                 _copy_if_present(df, out, source, target, numeric=numeric)
         for column in df.columns:
-            if column.startswith("yhat_p"):
+            if QUANTILE_COLUMN_PATTERN.fullmatch(column):
                 out[column] = pd.to_numeric(df[column], errors="coerce")
 
     for column in _safe_extra_columns(df, mapping):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,17 +61,84 @@ def evaluate(
 
 
 def attach_actuals(frame: pd.DataFrame, actuals: pd.DataFrame) -> pd.DataFrame:
-    default_series = (
-        str(frame["series_id"].dropna().iloc[0])
-        if "series_id" in frame and frame["series_id"].nunique(dropna=True) == 1
-        else "default"
-    )
+    default_series = resolve_default_series_id(frame)
     actual_frame = _normalize_actuals(actuals, default_series_id=default_series)
     keys = ["series_id", "target_time"]
     if "cutoff_time" in actual_frame and actual_frame["cutoff_time"].notna().any():
         keys = ["series_id", "cutoff_time", "target_time"]
     base = frame.drop(columns=["actual"], errors="ignore")
-    return base.merge(actual_frame, on=keys, how="left", suffixes=("", "_actuals"))
+    base, actual_frame = align_merge_times(base, actual_frame)
+    ensure_unique_merge_keys(actual_frame, keys, label="actuals")
+    merged = base.merge(actual_frame, on=keys, how="left", suffixes=("", "_actuals"), validate="m:1")
+    if (
+        "actual" in merged
+        and not merged.empty
+        and "actual" in actual_frame
+        and actual_frame["actual"].notna().any()
+        and not merged["actual"].notna().any()
+    ):
+        warnings.warn(
+            "attach_actuals matched zero forecast rows; "
+            "check series_id and timestamp alignment between forecast and actuals",
+            UserWarning,
+            stacklevel=2,
+        )
+    return merged
+
+
+def resolve_default_series_id(frame: pd.DataFrame) -> str:
+    """Series id used for actuals/benchmark frames that carry no series column."""
+    if "series_id" in frame and frame["series_id"].nunique(dropna=True) == 1:
+        return str(frame["series_id"].dropna().iloc[0])
+    return "default"
+
+
+def align_merge_times(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Coerce time columns to a consistent timezone convention before merging.
+
+    If any time column on either side is timezone-aware, every time column on both
+    sides is converted to UTC (naive values are assumed to be UTC); otherwise all
+    stay naive. Without this, tz-aware vs tz-naive keys silently match zero rows.
+    """
+    left = left.copy()
+    right = right.copy()
+    frames = (left, right)
+    converted: dict[tuple[int, str], pd.Series] = {}
+    any_aware = False
+    for index, frame in enumerate(frames):
+        for column in ("cutoff_time", "target_time"):
+            if column not in frame.columns:
+                continue
+            values = pd.to_datetime(frame[column], errors="coerce")
+            if not pd.api.types.is_datetime64_any_dtype(values):
+                continue
+            converted[(index, column)] = values
+            any_aware = any_aware or values.dt.tz is not None
+    for (index, column), values in converted.items():
+        if any_aware:
+            values = (
+                values.dt.tz_localize("UTC")
+                if values.dt.tz is None
+                else values.dt.tz_convert("UTC")
+            )
+        frames[index][column] = values
+    return left, right
+
+
+def ensure_unique_merge_keys(frame: pd.DataFrame, keys: list[str], *, label: str) -> None:
+    """Raise a clear error when a right-hand merge frame has duplicate join keys."""
+    duplicated = frame.duplicated(keys, keep=False)
+    if not bool(duplicated.any()):
+        return
+    sample = frame.loc[duplicated, keys].drop_duplicates().head(5)
+    raise ValueError(
+        f"{label} contains duplicate rows for merge keys {keys}; duplicates would fan out the "
+        f"forecast frame and double-count metrics. Duplicated keys (sample): "
+        f"{sample.to_dict(orient='records')}"
+    )
 
 
 def prepare_evaluation_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -204,6 +272,15 @@ def _normalize_actuals(actuals: pd.DataFrame, default_series_id: str = "default"
     return out
 
 
+def resolve_frame_run_id(frame: pd.DataFrame, run_id: str | None = None) -> str:
+    """Resolve a run id for an ad-hoc frame, falling back to "adhoc" when absent."""
+    if run_id:
+        return run_id
+    if "run_id" in frame.columns and not frame.empty and frame["run_id"].notna().any():
+        return str(frame["run_id"].dropna().iloc[0])
+    return "adhoc"
+
+
 def _resolve_forecast_frame(
     forecast: ForecastRun | pd.DataFrame | str | Path,
     *,
@@ -212,10 +289,10 @@ def _resolve_forecast_frame(
     if isinstance(forecast, ForecastRun):
         return read_artifact(forecast.forecast_artifact_uri), forecast.run_id
     if isinstance(forecast, pd.DataFrame):
-        return forecast.copy(), run_id or str(forecast["run_id"].iloc[0])
+        return forecast.copy(), resolve_frame_run_id(forecast, run_id)
     path = Path(forecast)
     frame = read_artifact(path)
-    return frame, run_id or str(frame["run_id"].iloc[0])
+    return frame, resolve_frame_run_id(frame, run_id)
 
 
 def _horizon_bucket(row: pd.Series) -> str:

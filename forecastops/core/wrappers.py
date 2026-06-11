@@ -8,8 +8,18 @@ from forecastops.core.capture import capture
 from forecastops.core.run import ForecastRun
 
 
-def forecast(**capture_kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorate a forecast function and capture its return value."""
+def forecast(
+    *,
+    return_run: bool = False,
+    **capture_kwargs: Any,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorate a forecast function and capture its return value.
+
+    The decorated function returns its original output unchanged, so downstream
+    consumers keep working. Pass ``return_run=True`` to return the
+    :class:`ForecastRun` instead; its ``raw_output`` attribute holds the
+    original output.
+    """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
@@ -18,7 +28,7 @@ def forecast(**capture_kwargs: Any) -> Callable[[Callable[..., Any]], Callable[.
             resolved = _resolve_callable_kwargs(capture_kwargs, args=args, kwargs=kwargs, instance=None)
             run = capture(output, **resolved)
             run.raw_output = output
-            return run
+            return run if return_run else output
 
         return wrapper
 

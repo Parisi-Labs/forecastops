@@ -9,7 +9,12 @@ from forecastops.adapters.registry import adapter as adapter_decorator
 from forecastops.adapters.registry import resolve_adapter
 from forecastops.core.compare import attach_benchmark, compare
 from forecastops.core.config import load_config
-from forecastops.core.evaluate import _normalize_actuals, attach_actuals, evaluate
+from forecastops.core.evaluate import (
+    _normalize_actuals,
+    attach_actuals,
+    evaluate,
+    resolve_default_series_id,
+)
 from forecastops.core.run import CaptureContext, ForecastRun, make_run_id, utc_now
 from forecastops.core.schema import ForecastSchema
 from forecastops.core.validate import validate_forecast, validation_status
@@ -88,6 +93,7 @@ def capture(
         with trace.span(semconv.SPAN_OUTPUT_NORMALIZE, parent_span_id=root_span_id):
             normalized = adapter_impl.normalize(obj, context=context)
             frame = normalized.frame
+            actuals_series_id = resolve_default_series_id(frame)
             if actuals is not None:
                 frame = attach_actuals(frame, actuals)
             if benchmark is not None:
@@ -114,7 +120,7 @@ def capture(
             benchmark_artifact_uri = None
             if actuals is not None:
                 actuals_artifact = write_dataframe_artifact(
-                    _normalize_actuals(actuals),
+                    _normalize_actuals(actuals, default_series_id=actuals_series_id),
                     store=resolved_store,
                     run_id=run_id,
                     artifact_type="actuals",
@@ -143,15 +149,22 @@ def capture(
 
         metric_records = []
         if "actual" in frame and frame["actual"].notna().any():
-            with trace.span(semconv.SPAN_EVALUATE, parent_span_id=root_span_id):
-                metric_records.extend(
-                    evaluate(frame, run_id=run_id, max_slice_cardinality=config.max_slice_cardinality).metrics
-                )
-            if "benchmark_yhat" in frame and frame["benchmark_yhat"].notna().any():
+            has_benchmark = "benchmark_yhat" in frame and frame["benchmark_yhat"].notna().any()
+            if has_benchmark:
+                # compare() computes the full model-side metric set (including count), so
+                # the standalone evaluate() pass would be redundant work.
                 with trace.span(semconv.SPAN_BENCHMARK_COMPARE, parent_span_id=root_span_id):
                     metric_records = compare(
                         frame,
                         benchmark_name=benchmark_name,
+                        run_id=run_id,
+                        max_slice_cardinality=config.max_slice_cardinality,
+                    ).metrics
+            else:
+                with trace.span(semconv.SPAN_EVALUATE, parent_span_id=root_span_id):
+                    metric_records = evaluate(
+                        frame,
+                        run_id=run_id,
                         max_slice_cardinality=config.max_slice_cardinality,
                     ).metrics
 

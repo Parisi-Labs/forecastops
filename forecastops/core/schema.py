@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+QUANTILE_COLUMN_PATTERN = re.compile(r"yhat_p\d{1,2}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +36,13 @@ class ForecastSchema:
         if data is None:
             return None
         allowed = {field.name for field in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
-        clean = {key: value for key, value in data.items() if key in allowed}
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ValueError(
+                f"Unknown ForecastSchema keys: {', '.join(unknown)}. "
+                f"Allowed keys: {', '.join(sorted(allowed))}"
+            )
+        clean = dict(data)
         quantiles = clean.get("quantiles")
         if isinstance(quantiles, dict):
             clean["quantiles"] = {float(key): value for key, value in quantiles.items()}

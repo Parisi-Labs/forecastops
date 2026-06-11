@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from forecastops.core.run import ValidationEvent
-from forecastops.core.schema import CANONICAL_REQUIRED_COLUMNS
+from forecastops.core.schema import CANONICAL_REQUIRED_COLUMNS, QUANTILE_COLUMN_PATTERN
 
 
 def validate_forecast(
@@ -219,7 +219,7 @@ def _interval_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
 
 def _quantile_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
     quantile_columns = sorted(
-        [column for column in frame.columns if column.startswith("yhat_p")],
+        [column for column in frame.columns if QUANTILE_COLUMN_PATTERN.fullmatch(column)],
         key=lambda column: int(column.replace("yhat_p", "")),
     )
     if len(quantile_columns) < 2:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
-from forecastops.core.evaluate import evaluate
+from forecastops.core.evaluate import align_merge_times, evaluate, resolve_frame_run_id
 from forecastops.core.run import ForecastRun
 from forecastops.store.parquet import read_artifact
 
@@ -60,19 +61,30 @@ def _frame_and_id(run: ForecastRun | pd.DataFrame | str | Path) -> tuple[pd.Data
     if isinstance(run, ForecastRun):
         return read_artifact(run.forecast_artifact_uri), run.run_id
     if isinstance(run, pd.DataFrame):
-        return run.copy(), str(run["run_id"].iloc[0])
+        return run.copy(), resolve_frame_run_id(run)
     frame = read_artifact(run)
-    return frame, str(frame["run_id"].iloc[0])
+    return frame, resolve_frame_run_id(frame)
 
 
 def _forecast_deltas(base: pd.DataFrame, candidate: pd.DataFrame) -> pd.DataFrame:
     keys = ["series_id", "cutoff_time", "target_time"]
-    merged = base[[*keys, "yhat"]].merge(
+    base_keyed, candidate_keyed = align_merge_times(
+        base[[*keys, "yhat"]],
         candidate[[*keys, "yhat"]],
+    )
+    merged = base_keyed.merge(
+        candidate_keyed,
         on=keys,
         how="inner",
         suffixes=("_base", "_candidate"),
     )
+    if merged.empty and not base.empty and not candidate.empty:
+        warnings.warn(
+            "diff matched zero overlapping forecast rows; "
+            "check series_id and timestamp alignment between the two runs",
+            UserWarning,
+            stacklevel=2,
+        )
     merged["forecast_delta"] = merged["yhat_candidate"] - merged["yhat_base"]
     merged["abs_forecast_delta"] = merged["forecast_delta"].abs()
     return merged.sort_values("abs_forecast_delta", ascending=False)

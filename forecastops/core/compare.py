@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,8 +9,12 @@ import pandas as pd
 from forecastops.core.evaluate import (
     DEFAULT_METRICS,
     EvaluationResult,
+    align_merge_times,
     compute_metrics,
+    ensure_unique_merge_keys,
     prepare_evaluation_frame,
+    resolve_default_series_id,
+    resolve_frame_run_id,
 )
 from forecastops.core.run import ForecastRun, MetricRecord, utc_now
 from forecastops.store.parquet import read_artifact
@@ -33,15 +38,17 @@ def compare(
     benchmark_name: str = "benchmark",
     metrics: list[str] | None = None,
     slices: list[str] | None = None,
+    run_id: str | None = None,
     max_slice_cardinality: int = 100,
 ) -> ComparisonResult:
-    frame, run_id = _resolve_run_frame(run)
+    frame, run_id = _resolve_run_frame(run, run_id=run_id)
     if benchmark is not None:
         frame = attach_benchmark(frame, benchmark, benchmark_name=benchmark_name)
     if "benchmark_yhat" not in frame:
         raise ValueError("benchmark_yhat is required for benchmark comparison")
 
-    selected_metrics = [metric for metric in (metrics or DEFAULT_METRICS) if metric != "count"]
+    selected_metrics = list(metrics or DEFAULT_METRICS)
+    benchmark_side_metrics = [metric for metric in selected_metrics if metric != "count"]
     model_frame = prepare_evaluation_frame(frame)
     benchmark_frame = frame.copy()
     benchmark_frame["yhat"] = benchmark_frame["benchmark_yhat"]
@@ -57,7 +64,7 @@ def compare(
     benchmark_metrics = compute_metrics(
         benchmark_frame,
         run_id=run_id,
-        metrics=selected_metrics,
+        metrics=benchmark_side_metrics,
         slices=slices or ["horizon_bucket"],
         max_slice_cardinality=max_slice_cardinality,
         benchmark_name=benchmark_name,
@@ -72,11 +79,7 @@ def attach_benchmark(
     *,
     benchmark_name: str = "benchmark",
 ) -> pd.DataFrame:
-    default_series = (
-        str(frame["series_id"].dropna().iloc[0])
-        if "series_id" in frame and frame["series_id"].nunique(dropna=True) == 1
-        else "default"
-    )
+    default_series = resolve_default_series_id(frame)
     benchmark_frame = _normalize_benchmark(benchmark, benchmark_name, default_series_id=default_series)
     keys = ["series_id", "target_time"]
     if "cutoff_time" in benchmark_frame and benchmark_frame["cutoff_time"].notna().any():
@@ -85,7 +88,27 @@ def attach_benchmark(
         columns=["benchmark_yhat", "benchmark_name", "benchmark_version"],
         errors="ignore",
     )
-    return base.merge(benchmark_frame, on=keys, how="left", suffixes=("", "_benchmark"))
+    base, benchmark_frame = align_merge_times(base, benchmark_frame)
+    ensure_unique_merge_keys(benchmark_frame, keys, label="benchmark")
+    merged = base.merge(
+        benchmark_frame,
+        on=keys,
+        how="left",
+        suffixes=("", "_benchmark"),
+        validate="m:1",
+    )
+    if (
+        not merged.empty
+        and benchmark_frame["benchmark_yhat"].notna().any()
+        and not merged["benchmark_yhat"].notna().any()
+    ):
+        warnings.warn(
+            "attach_benchmark matched zero forecast rows; "
+            "check series_id and timestamp alignment between forecast and benchmark",
+            UserWarning,
+            stacklevel=2,
+        )
+    return merged
 
 
 def _normalize_benchmark(
@@ -169,10 +192,14 @@ def _skill_metrics(
     return skill
 
 
-def _resolve_run_frame(run: ForecastRun | pd.DataFrame | str | Path) -> tuple[pd.DataFrame, str]:
+def _resolve_run_frame(
+    run: ForecastRun | pd.DataFrame | str | Path,
+    *,
+    run_id: str | None = None,
+) -> tuple[pd.DataFrame, str]:
     if isinstance(run, ForecastRun):
         return read_artifact(run.forecast_artifact_uri), run.run_id
     if isinstance(run, pd.DataFrame):
-        return run.copy(), str(run["run_id"].iloc[0])
+        return run.copy(), resolve_frame_run_id(run, run_id)
     frame = read_artifact(run)
-    return frame, str(frame["run_id"].iloc[0])
+    return frame, resolve_frame_run_id(frame, run_id)
