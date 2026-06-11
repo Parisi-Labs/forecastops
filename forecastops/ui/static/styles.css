@@ -72,6 +72,11 @@ code {
   font-family: var(--mono);
 }
 
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
 /* Shell */
 
 .shell {
@@ -86,7 +91,7 @@ code {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   padding: 14px 12px;
   border-right: 1px solid var(--line);
 }
@@ -124,10 +129,26 @@ code {
   letter-spacing: .1em;
 }
 
-.filters {
+.nav {
   display: grid;
-  gap: 7px;
-  padding: 0 2px;
+  gap: 2px;
+}
+
+.nav a {
+  display: block;
+  padding: 6px 9px;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.nav a:hover {
+  color: var(--ink);
+}
+
+.nav a.active {
+  color: var(--ink);
+  background: var(--raised);
 }
 
 .side-foot {
@@ -164,6 +185,14 @@ code {
   color: var(--ink);
 }
 
+.crumbs a {
+  color: var(--muted);
+}
+
+.crumbs a:hover {
+  color: var(--ink);
+}
+
 .crumbs span {
   color: var(--muted);
   font-family: var(--mono);
@@ -181,6 +210,20 @@ main {
   padding: 16px 20px 56px;
 }
 
+/* Toolbar (runs index) */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.toolbar input[type="search"] {
+  flex: 1;
+  max-width: 320px;
+}
+
 /* Tables */
 
 .table-wrap {
@@ -191,7 +234,7 @@ main {
 }
 
 .runs-table-wrap {
-  max-height: 300px;
+  max-height: calc(100vh - 160px);
 }
 
 table {
@@ -202,7 +245,7 @@ table {
 
 th,
 td {
-  padding: 7px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -237,17 +280,16 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 
-#runsTable tbody tr {
+tr[data-href] {
   cursor: pointer;
 }
 
-#runsTable tbody tr:hover {
+tr[data-href]:hover {
   background: var(--raised);
 }
 
-#runsTable tbody tr.selected {
-  background: var(--raised);
-  box-shadow: inset 2px 0 0 var(--accent);
+td .link {
+  color: var(--accent);
 }
 
 /* Status */
@@ -264,10 +306,17 @@ tbody tr:last-child td {
 .delta-up { color: var(--bad); }
 .delta-down { color: var(--green); }
 
-/* Detail */
+/* Run detail */
 
-.detail {
-  margin-top: 18px;
+.back-link {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.back-link:hover {
+  color: var(--ink);
 }
 
 .detail-head {
@@ -351,7 +400,7 @@ tbody tr:last-child td {
   color: var(--faint);
 }
 
-/* Inspector */
+/* Panels + inspector */
 
 .panel {
   border: 1px solid var(--line);
@@ -481,6 +530,18 @@ tbody tr:last-child td {
   color: var(--faint);
 }
 
+/* Sparklines (projects view) */
+
+.spark {
+  display: block;
+}
+
+.spark polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+
 /* Tabs */
 
 .tabs {
@@ -572,24 +633,33 @@ tbody tr:last-child td {
   background: var(--accent);
 }
 
-/* Compare */
+/* Compare view */
 
 .compare-controls {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: end;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
-  font-size: 12px;
-  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.compare-controls label {
+  display: grid;
+  gap: 5px;
+  font: 600 10px var(--sans);
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: .08em;
 }
 
 .compare-controls select {
-  max-width: 420px;
+  max-width: 380px;
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 .compare-result h4 {
-  margin: 14px 0 6px;
+  margin: 16px 0 6px;
   font: 600 10px var(--sans);
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -646,6 +716,10 @@ tbody tr:last-child td {
 
   .side-foot {
     margin-top: 0;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
   }
 
   .summary-grid {

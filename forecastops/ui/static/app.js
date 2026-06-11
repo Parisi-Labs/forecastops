@@ -1,8 +1,8 @@
 const state = {
   runs: [],
-  selectedRunId: null,
-  activeTab: "metrics",
+  filters: { project: "", status: "", search: "" },
   sort: { key: "created_at", dir: "desc" },
+  runTab: "metrics",
   detail: null, // { run, points, residuals, series, selectedSeries }
 };
 
@@ -33,13 +33,109 @@ async function api(path) {
   return response.json();
 }
 
+/* Routing: #/runs, #/runs/<id>, #/projects, #/compare?base=..&candidate=.. */
+
+function parseHash() {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const [pathPart, queryPart] = hash.split("?");
+  const segments = pathPart.split("/").filter(Boolean).map(decodeURIComponent);
+  return { segments, params: new URLSearchParams(queryPart || "") };
+}
+
+async function route() {
+  const { segments, params } = parseHash();
+  const view = segments[0] || "runs";
+  document.querySelectorAll(".nav a").forEach((link) => {
+    link.classList.toggle("active", link.dataset.view === view);
+  });
+  $("#topMeta").textContent = "";
+  if (view === "runs" && segments[1]) {
+    await renderRunView(segments[1]);
+  } else if (view === "projects") {
+    renderProjectsView();
+  } else if (view === "compare") {
+    renderCompareView(params);
+  } else {
+    renderRunsView(params);
+  }
+}
+
+function setCrumbs(html) {
+  $("#crumbs").innerHTML = html;
+}
+
 async function boot() {
   const health = await api("/api/health");
   $("#storeInfo").textContent = health.store;
-  $("#refreshButton").addEventListener("click", refresh);
-  $("#projectFilter").addEventListener("change", renderRuns);
-  $("#statusFilter").addEventListener("change", renderRuns);
-  $("#searchFilter").addEventListener("input", renderRuns);
+  $("#refreshButton").addEventListener("click", async () => {
+    await refreshData();
+    await route();
+  });
+  window.addEventListener("hashchange", route);
+  await refreshData();
+  await route();
+}
+
+async function refreshData() {
+  state.runs = await api("/api/runs");
+}
+
+/* ---------- Runs index ---------- */
+
+function renderRunsView(params) {
+  setCrumbs("Runs");
+  if (params && params.has("project")) state.filters.project = params.get("project");
+  if (!state.runs.length) {
+    $("#view").innerHTML = emptyStoreHtml();
+    return;
+  }
+  const projects = [...new Set(state.runs.map((run) => run.project_id).filter(Boolean))].sort();
+  $("#view").innerHTML = `
+    <div class="toolbar">
+      <select id="projectFilter" aria-label="Filter by project">
+        <option value="">All projects</option>
+        ${projects.map((p) => `<option value="${escapeHtml(p)}" ${p === state.filters.project ? "selected" : ""}>${escapeHtml(p)}</option>`).join("")}
+      </select>
+      <select id="statusFilter" aria-label="Filter by validation status">
+        <option value="">All statuses</option>
+        ${["PASS", "WARN", "FAIL"].map((s) => `<option value="${s}" ${s === state.filters.status ? "selected" : ""}>${s[0]}${s.slice(1).toLowerCase()}</option>`).join("")}
+      </select>
+      <input id="searchFilter" type="search" placeholder="Search run, project, model, adapter" autocomplete="off" value="${escapeHtml(state.filters.search)}" aria-label="Search runs">
+    </div>
+    <div class="table-wrap runs-table-wrap">
+      <table id="runsTable">
+        <thead>
+          <tr>
+            <th data-sort="run_id">Run</th>
+            <th data-sort="project_id">Project</th>
+            <th data-sort="model_name">Model</th>
+            <th data-sort="created_at">Created</th>
+            <th data-sort="horizon_max" class="num">Horizon</th>
+            <th data-sort="points_count" class="num">Points</th>
+            <th data-sort="mae" class="num">MAE</th>
+            <th data-sort="wape" class="num">WAPE</th>
+            <th data-sort="bias" class="num">Bias</th>
+            <th data-sort="coverage" class="num">Coverage</th>
+            <th data-sort="skill_vs_benchmark" class="num">Skill</th>
+            <th data-sort="validation_status">Validation</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+  $("#projectFilter").addEventListener("change", (event) => {
+    state.filters.project = event.target.value;
+    updateRunsTable();
+  });
+  $("#statusFilter").addEventListener("change", (event) => {
+    state.filters.status = event.target.value;
+    updateRunsTable();
+  });
+  $("#searchFilter").addEventListener("input", (event) => {
+    state.filters.search = event.target.value;
+    updateRunsTable();
+  });
   document.querySelectorAll("#runsTable th[data-sort]").forEach((th) => {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;
@@ -48,69 +144,23 @@ async function boot() {
       } else {
         state.sort = { key, dir: key === "created_at" ? "desc" : "asc" };
       }
-      renderRuns();
+      updateRunsTable();
     });
   });
-  await refresh();
-}
-
-async function refresh() {
-  state.runs = await api("/api/runs");
-  renderFilters();
-  renderRuns();
-  if (!state.runs.length) {
-    renderNoRuns();
-    return;
-  }
-  const stillExists = state.runs.some((run) => run.run_id === state.selectedRunId);
-  if (!stillExists) state.selectedRunId = null;
-  if (!state.selectedRunId) await selectRun(state.runs[0].run_id);
-}
-
-function renderNoRuns() {
-  $("#crumbRun").textContent = "";
-  $("#detail").innerHTML = `
-    <div class="empty-state">
-      <h2>No runs captured yet</h2>
-      <p>Capture a forecast from your existing pipeline, then refresh this page:</p>
-      <pre>import forecastops as fops
-
-forecast = model.predict(future)
-
-fops.capture(
-    forecast,
-    project="my-project",
-    series_id="my-series",
-    cutoff=train_df["ds"].max(),
-    actuals=actuals_df,
-)</pre>
-      <p class="hint">Runs are stored locally in the store shown in the sidebar. Nothing leaves this machine.</p>
-    </div>
-  `;
-}
-
-function renderFilters() {
-  const select = $("#projectFilter");
-  const current = select.value;
-  const projects = [...new Set(state.runs.map((run) => run.project_id).filter(Boolean))].sort();
-  select.innerHTML = `<option value="">All projects</option>${projects
-    .map((project) => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`)
-    .join("")}`;
-  select.value = projects.includes(current) ? current : "";
+  updateRunsTable();
 }
 
 function filteredRuns() {
-  const project = $("#projectFilter").value;
-  const status = $("#statusFilter").value;
-  const search = $("#searchFilter").value.toLowerCase();
+  const { project, status, search } = state.filters;
+  const needle = search.toLowerCase();
   return state.runs.filter((run) => {
     if (project && run.project_id !== project) return false;
     if (status && run.validation_status !== status) return false;
-    if (search) {
+    if (needle) {
       const haystack = [run.run_id, run.project_id, run.model_name, run.model_version, run.adapter_name]
         .join(" ")
         .toLowerCase();
-      if (!haystack.includes(search)) return false;
+      if (!haystack.includes(needle)) return false;
     }
     return true;
   });
@@ -131,9 +181,9 @@ function sortedRuns(rows) {
   });
 }
 
-function renderRuns() {
+function updateRunsTable() {
   const rows = sortedRuns(filteredRuns());
-  $("#runCount").textContent = `${rows.length} of ${state.runs.length} runs`;
+  $("#topMeta").textContent = `${rows.length} of ${state.runs.length} runs`;
   document.querySelectorAll("#runsTable th[data-sort]").forEach((th) => {
     const active = th.dataset.sort === state.sort.key;
     th.classList.toggle("sorted", active);
@@ -148,8 +198,8 @@ function renderRuns() {
   tbody.innerHTML = rows
     .map(
       (run) => `
-      <tr data-run-id="${escapeHtml(run.run_id)}" class="${run.run_id === state.selectedRunId ? "selected" : ""}">
-        <td title="${escapeHtml(run.run_id)}">${escapeHtml(shortRun(run.run_id))}</td>
+      <tr data-href="#/runs/${encodeURIComponent(run.run_id)}">
+        <td title="${escapeHtml(run.run_id)}"><span class="link">${escapeHtml(shortRun(run.run_id))}</span></td>
         <td>${escapeHtml(run.project_id || "–")}</td>
         <td>${escapeHtml(run.model_name || "–")}</td>
         <td title="${escapeHtml(String(run.created_at || ""))}">${escapeHtml(formatDate(run.created_at))}</td>
@@ -165,41 +215,58 @@ function renderRuns() {
     `
     )
     .join("");
-  tbody.querySelectorAll("tr[data-run-id]").forEach((row) => {
-    row.addEventListener("click", () => selectRun(row.dataset.runId));
+  attachRowLinks(tbody);
+}
+
+function attachRowLinks(scope) {
+  scope.querySelectorAll("tr[data-href]").forEach((row) => {
+    row.addEventListener("click", () => {
+      window.location.hash = row.dataset.href;
+    });
   });
 }
 
-async function selectRun(runId) {
-  state.selectedRunId = runId;
-  renderRuns();
-  const [run, points, residuals] = await Promise.all([
-    api(`/api/runs/${encodeURIComponent(runId)}`),
-    api(`/api/runs/${encodeURIComponent(runId)}/forecast-points?limit=2000`),
-    api(`/api/runs/${encodeURIComponent(runId)}/residuals?limit=1000`),
-  ]);
+function emptyStoreHtml() {
+  return `
+    <div class="empty-state">
+      <h2>No runs captured yet</h2>
+      <p>Capture a forecast from your existing pipeline, then refresh this page:</p>
+      <pre>import forecastops as fops
+
+forecast = model.predict(future)
+
+fops.capture(
+    forecast,
+    project="my-project",
+    series_id="my-series",
+    cutoff=train_df["ds"].max(),
+    actuals=actuals_df,
+)</pre>
+      <p class="hint">Runs are stored locally in the store shown in the sidebar. Nothing leaves this machine.</p>
+    </div>
+  `;
+}
+
+/* ---------- Run detail ---------- */
+
+async function renderRunView(runId) {
+  setCrumbs(`<a href="#/runs">Runs</a> <span>/ ${escapeHtml(shortRun(runId))}</span>`);
+  $("#view").innerHTML = `<p class="hint">Loading run…</p>`;
+  let run, points, residuals;
+  try {
+    [run, points, residuals] = await Promise.all([
+      api(`/api/runs/${encodeURIComponent(runId)}`),
+      api(`/api/runs/${encodeURIComponent(runId)}/forecast-points?limit=2000`),
+      api(`/api/runs/${encodeURIComponent(runId)}/residuals?limit=1000`),
+    ]);
+  } catch (error) {
+    $("#view").innerHTML = `<div class="empty-state"><h2>Run not found</h2><p>${escapeHtml(error.message)}</p><p><a href="#/runs">Back to runs</a></p></div>`;
+    return;
+  }
   const series = [...new Set(points.map((point) => point.series_id).filter((s) => s !== null && s !== undefined))].map(String).sort();
   state.detail = { run, points, residuals, series, selectedSeries: "" };
-  $("#crumbRun").textContent = ` / ${shortRun(runId)}`;
-  renderDetail();
-}
+  $("#topMeta").textContent = `captured ${formatDate(run.created_at)}`;
 
-async function changeSeries(seriesId) {
-  const { run } = state.detail;
-  state.detail.selectedSeries = seriesId;
-  const query = seriesId ? `&series_id=${encodeURIComponent(seriesId)}` : "";
-  const [points, residuals] = await Promise.all([
-    api(`/api/runs/${encodeURIComponent(run.run_id)}/forecast-points?limit=2000${query}`),
-    api(`/api/runs/${encodeURIComponent(run.run_id)}/residuals?limit=1000${query}`),
-  ]);
-  state.detail.points = points;
-  state.detail.residuals = residuals;
-  renderCharts();
-  if (state.activeTab === "residuals") renderTab();
-}
-
-function renderDetail() {
-  const { run, series, selectedSeries } = state.detail;
   const metricLookup = Object.fromEntries(
     (run.metrics || [])
       .filter((metric) => metric.slice_name === null)
@@ -209,16 +276,17 @@ function renderDetail() {
     series.length > 1
       ? `<select id="seriesFilter" aria-label="Filter chart by series">
            <option value="">All series (${series.length})</option>
-           ${series.map((s) => `<option value="${escapeHtml(s)}" ${s === selectedSeries ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+           ${series.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
          </select>`
       : "";
-  $("#detail").innerHTML = `
+  $("#view").innerHTML = `
+    <a class="back-link" href="#/runs">← Runs</a>
     <div class="detail-head">
       <h2>${escapeHtml(run.model_name || run.project_id || "Run detail")}</h2>
       <span class="run-id">${escapeHtml(run.run_id)}</span>
       <button type="button" class="copy-btn" id="copyRunId">copy</button>
       <span class="status ${escapeHtml(run.status || "")}">${escapeHtml((run.status || "").toUpperCase())}</span>
-      <span class="meta">captured ${escapeHtml(formatDate(run.created_at))}</span>
+      <span class="meta"><a href="#/compare?base=${encodeURIComponent(run.run_id)}">Compare this run →</a></span>
     </div>
     <div class="summary-grid">
       ${metricCard("MAE", metricLookup.mae, "mean abs error")}
@@ -226,7 +294,7 @@ function renderDetail() {
       ${metricCard("WAPE", metricLookup.wape, "weighted abs pct error")}
       ${metricCard("Bias", metricLookup.bias, "mean error")}
       ${metricCard("Coverage", metricLookup.coverage, "interval hit rate")}
-      ${metricCard("Points", run.points_count, `${run.series_count ?? 1} series`, true)}
+      ${metricCard("Points", run.points_count, `${fmt(run.series_count, 0)} series`, true)}
     </div>
     <div class="panel">
       <div class="inspector-head">
@@ -248,7 +316,6 @@ function renderDetail() {
       ${tabButton("residuals", "Residuals")}
       ${tabButton("artifacts", `Artifacts (${(run.artifacts || []).length})`)}
       ${tabButton("details", "Details")}
-      ${tabButton("compare", "Compare")}
     </div>
     <div id="tabContent" class="tab-content"></div>
   `;
@@ -265,19 +332,234 @@ function renderDetail() {
   if (seriesFilter) seriesFilter.addEventListener("change", (event) => changeSeries(event.target.value));
   document.querySelectorAll(".tabs button").forEach((button) => {
     button.addEventListener("click", () => {
-      state.activeTab = button.dataset.tab;
-      renderTab();
+      state.runTab = button.dataset.tab;
+      renderRunTab();
     });
   });
   renderCharts();
-  renderTab();
+  renderRunTab();
 }
 
-/* Forecast inspector: one chart per series, like a model-eval gallery. */
+async function changeSeries(seriesId) {
+  const { run } = state.detail;
+  state.detail.selectedSeries = seriesId;
+  const query = seriesId ? `&series_id=${encodeURIComponent(seriesId)}` : "";
+  const [points, residuals] = await Promise.all([
+    api(`/api/runs/${encodeURIComponent(run.run_id)}/forecast-points?limit=2000${query}`),
+    api(`/api/runs/${encodeURIComponent(run.run_id)}/residuals?limit=1000${query}`),
+  ]);
+  state.detail.points = points;
+  state.detail.residuals = residuals;
+  renderCharts();
+  if (state.runTab === "residuals") renderRunTab();
+}
+
+function renderRunTab() {
+  const { run, residuals } = state.detail;
+  document.querySelectorAll(".tabs button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === state.runTab);
+  });
+  const target = $("#tabContent");
+  if (state.runTab === "metrics") {
+    target.innerHTML = table(run.metrics || [], "No metrics computed for this run. Pass actuals to fops.capture() to enable evaluation.");
+  } else if (state.runTab === "validation") {
+    target.innerHTML = table(run.validation || [], "No validation issues. The captured forecast passed all checks.");
+  } else if (state.runTab === "residuals") {
+    target.innerHTML = table(residuals || [], "No residuals available. Residuals require actuals to be captured alongside the forecast.");
+  } else if (state.runTab === "artifacts") {
+    target.innerHTML = table(run.artifacts || [], "No artifacts recorded.");
+  } else if (state.runTab === "details") {
+    renderDetailsTab(target);
+  }
+}
+
+function renderDetailsTab(target) {
+  const { run } = state.detail;
+  const validationCounts = countBy(run.validation || [], "severity");
+  target.innerHTML = `
+    <div class="details-grid">
+      <div class="panel">
+        <div class="panel-title" style="display:block;margin-bottom:10px">Run</div>
+        ${kv({
+          Project: run.project_id,
+          Model: run.model_name,
+          Version: run.model_version,
+          Adapter: run.adapter_name,
+          Created: formatDate(run.created_at),
+          Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
+          Target: formatRange(run.target_start, run.target_end),
+          Series: fmt(run.series_count, 0),
+          Points: fmt(run.points_count, 0),
+          Validation: validationSummary(validationCounts),
+          Trace: run.trace_id,
+        })}
+      </div>
+      <div class="panel">
+        <div class="panel-title" style="display:block;margin-bottom:10px">Trace timeline</div>
+        ${traceTimeline(run.spans || [])}
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Projects ---------- */
+
+function renderProjectsView() {
+  setCrumbs("Projects");
+  if (!state.runs.length) {
+    $("#view").innerHTML = emptyStoreHtml();
+    return;
+  }
+  const groups = new Map();
+  state.runs.forEach((run) => {
+    const key = run.project_id || "(none)";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(run);
+  });
+  const projects = [...groups.entries()].map(([project, runs]) => {
+    const ordered = runs
+      .slice()
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const latest = ordered[ordered.length - 1];
+    const maeTrend = ordered.map((run) => run.mae).filter((v) => v !== null && v !== undefined).slice(-20);
+    const statuses = countBy(runs, "validation_status");
+    return { project, runs, ordered, latest, maeTrend, statuses };
+  });
+  projects.sort((a, b) => String(b.latest.created_at).localeCompare(String(a.latest.created_at)));
+  $("#topMeta").textContent = `${projects.length} project${projects.length === 1 ? "" : "s"} · ${state.runs.length} run${state.runs.length === 1 ? "" : "s"}`;
+  $("#view").innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th class="num">Runs</th>
+            <th>Models</th>
+            <th>Last capture</th>
+            <th class="num">Latest MAE</th>
+            <th class="num">Latest WAPE</th>
+            <th>MAE trend</th>
+            <th>Validation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${projects
+            .map(
+              ({ project, runs, latest, maeTrend, statuses }) => `
+            <tr data-href="#/runs?project=${encodeURIComponent(project)}">
+              <td><span class="link">${escapeHtml(project)}</span></td>
+              <td class="num">${runs.length}</td>
+              <td>${escapeHtml([...new Set(runs.map((run) => run.model_name).filter(Boolean))].slice(0, 3).join(", ") || "–")}</td>
+              <td>${escapeHtml(formatDate(latest.created_at))}</td>
+              <td class="num">${fmt(latest.mae)}</td>
+              <td class="num">${fmt(latest.wape)}</td>
+              <td>${sparkline(maeTrend)}</td>
+              <td>${["PASS", "WARN", "FAIL"]
+                .filter((s) => statuses[s])
+                .map((s) => `<span class="status ${s}">${statuses[s]} ${s}</span>`)
+                .join(" · ") || "–"}</td>
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="grid-note">MAE trend is oldest → newest capture. Click a project to see its runs.</p>
+  `;
+  attachRowLinks($("#view"));
+}
+
+function sparkline(values, width = 120, height = 26) {
+  const clean = values.map(Number).filter(Number.isFinite);
+  if (clean.length < 2) return `<span class="hint">–</span>`;
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const span = max - min || 1;
+  const points = clean
+    .map((value, index) => {
+      const x = (index / (clean.length - 1)) * (width - 4) + 2;
+      const y = height - 3 - ((value - min) / span) * (height - 6);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return `<svg class="spark" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="MAE trend"><polyline points="${points}"></polyline></svg>`;
+}
+
+/* ---------- Compare ---------- */
+
+function renderCompareView(params) {
+  setCrumbs("Compare");
+  if (state.runs.length < 2) {
+    $("#view").innerHTML = `<div class="empty-state"><h2>Need two runs to compare</h2><p>Capture at least two runs, then come back.</p></div>`;
+    return;
+  }
+  const base = params.get("base") || state.runs[0].run_id;
+  const candidate = params.get("candidate") || (state.runs.find((run) => run.run_id !== base) || {}).run_id;
+  const option = (run, selected) =>
+    `<option value="${escapeHtml(run.run_id)}" ${run.run_id === selected ? "selected" : ""}>${escapeHtml(
+      [run.project_id, run.model_name, formatDate(run.created_at), shortRun(run.run_id)].filter(Boolean).join(" · ")
+    )}</option>`;
+  $("#view").innerHTML = `
+    <div class="compare-controls">
+      <label>Base
+        <select id="baseSelect">${state.runs.map((run) => option(run, base)).join("")}</select>
+      </label>
+      <label>Candidate
+        <select id="candidateSelect">${state.runs.map((run) => option(run, candidate)).join("")}</select>
+      </label>
+      <button type="button" id="compareButton">Compare</button>
+    </div>
+    <div id="compareResult" class="compare-result hint">Positive deltas on error metrics (MAE, RMSE, WAPE) mean the candidate got worse than the base.</div>
+  `;
+  const runCompare = async () => {
+    const baseId = $("#baseSelect").value;
+    const candidateId = $("#candidateSelect").value;
+    const result = $("#compareResult");
+    if (baseId === candidateId) {
+      result.className = "compare-result hint";
+      result.textContent = "Pick two different runs.";
+      return;
+    }
+    window.history.replaceState(null, "", `#/compare?base=${encodeURIComponent(baseId)}&candidate=${encodeURIComponent(candidateId)}`);
+    result.className = "compare-result";
+    result.innerHTML = `<p class="hint">Comparing…</p>`;
+    try {
+      const diff = await api(
+        `/api/diff?base_run_id=${encodeURIComponent(baseId)}&candidate_run_id=${encodeURIComponent(candidateId)}`
+      );
+      const regressions = diff.regressions || [];
+      result.innerHTML = `
+        <h4>${regressions.length ? `${regressions.length} regression${regressions.length === 1 ? "" : "s"} detected` : "No regressions detected"}</h4>
+        ${regressions.length ? table(regressions, "") : ""}
+        <h4>Metric deltas (candidate − base)</h4>
+        ${table(diff.metric_deltas || [], "No overlapping metrics between the two runs.")}
+        <h4>Forecast deltas${(diff.forecast_deltas || []).length >= 1000 ? " (first 1000)" : ""}</h4>
+        ${table(
+          (diff.forecast_deltas || [])
+            .slice()
+            .sort((a, b) =>
+              String(a.series_id).localeCompare(String(b.series_id)) ||
+              String(a.target_time).localeCompare(String(b.target_time))
+            )
+            .slice(0, 200),
+          "No overlapping forecast points between the two runs."
+        )}
+      `;
+    } catch (error) {
+      result.innerHTML = `<p class="status FAIL">Compare failed: ${escapeHtml(error.message)}</p>`;
+    }
+  };
+  $("#compareButton").addEventListener("click", runCompare);
+  if (params.get("base") && params.get("candidate")) runCompare();
+}
+
+/* ---------- Forecast inspector charts ---------- */
+
 function renderCharts() {
   const grid = $("#chartGrid");
   const note = $("#gridNote");
-  if (!grid) return;
+  if (!grid || !state.detail) return;
   const { points } = state.detail;
   const clean = points.filter(
     (point) =>
@@ -463,112 +745,7 @@ function intervalBand(points, x, y) {
   return `<path d="${top}${bottom}Z" fill="${COLORS.band}"></path>`;
 }
 
-function renderTab() {
-  const { run, residuals } = state.detail;
-  document.querySelectorAll(".tabs button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === state.activeTab);
-  });
-  const target = $("#tabContent");
-  if (state.activeTab === "metrics") {
-    target.innerHTML = table(run.metrics || [], "No metrics computed for this run. Pass actuals to fops.capture() to enable evaluation.");
-  } else if (state.activeTab === "validation") {
-    target.innerHTML = table(run.validation || [], "No validation issues. The captured forecast passed all checks.");
-  } else if (state.activeTab === "residuals") {
-    target.innerHTML = table(residuals || [], "No residuals available. Residuals require actuals to be captured alongside the forecast.");
-  } else if (state.activeTab === "artifacts") {
-    target.innerHTML = table(run.artifacts || [], "No artifacts recorded.");
-  } else if (state.activeTab === "details") {
-    renderDetailsTab(target);
-  } else if (state.activeTab === "compare") {
-    renderCompareTab(target);
-  }
-}
-
-function renderDetailsTab(target) {
-  const { run } = state.detail;
-  const validationCounts = countBy(run.validation || [], "severity");
-  target.innerHTML = `
-    <div class="details-grid">
-      <div class="panel">
-        <div class="panel-title" style="display:block;margin-bottom:10px">Run</div>
-        ${kv({
-          Project: run.project_id,
-          Model: run.model_name,
-          Version: run.model_version,
-          Adapter: run.adapter_name,
-          Created: formatDate(run.created_at),
-          Cutoff: formatRange(run.cutoff_start, run.cutoff_end),
-          Target: formatRange(run.target_start, run.target_end),
-          Series: fmt(run.series_count, 0),
-          Points: fmt(run.points_count, 0),
-          Validation: validationSummary(validationCounts),
-          Trace: run.trace_id,
-        })}
-      </div>
-      <div class="panel">
-        <div class="panel-title" style="display:block;margin-bottom:10px">Trace timeline</div>
-        ${traceTimeline(run.spans || [])}
-      </div>
-    </div>
-  `;
-}
-
-function renderCompareTab(target) {
-  const { run } = state.detail;
-  const candidates = state.runs.filter((other) => other.run_id !== run.run_id);
-  if (!candidates.length) {
-    target.innerHTML = `<p class="empty-state">Capture a second run to compare against this one.</p>`;
-    return;
-  }
-  const sameProject = candidates.filter((other) => other.project_id === run.project_id);
-  const otherProjects = candidates.filter((other) => other.project_id !== run.project_id);
-  const option = (other) =>
-    `<option value="${escapeHtml(other.run_id)}">${escapeHtml(
-      [other.project_id, other.model_name, formatDate(other.created_at), shortRun(other.run_id)].filter(Boolean).join(" · ")
-    )}</option>`;
-  target.innerHTML = `
-    <div class="compare-controls">
-      <label for="compareSelect">Compare this run (base) against</label>
-      <select id="compareSelect">
-        ${sameProject.length ? `<optgroup label="Same project">${sameProject.map(option).join("")}</optgroup>` : ""}
-        ${otherProjects.length ? `<optgroup label="Other projects">${otherProjects.map(option).join("")}</optgroup>` : ""}
-      </select>
-      <button type="button" class="secondary" id="compareButton">Compare</button>
-    </div>
-    <div id="compareResult" class="compare-result hint">Pick a candidate run, then compare. Positive deltas on error metrics (MAE, RMSE, WAPE) mean the candidate got worse.</div>
-  `;
-  $("#compareButton").addEventListener("click", async () => {
-    const candidateId = $("#compareSelect").value;
-    const result = $("#compareResult");
-    result.className = "compare-result";
-    result.innerHTML = `<p class="hint">Comparing…</p>`;
-    try {
-      const diff = await api(
-        `/api/diff?base_run_id=${encodeURIComponent(run.run_id)}&candidate_run_id=${encodeURIComponent(candidateId)}`
-      );
-      const regressions = diff.regressions || [];
-      result.innerHTML = `
-        <h4>${regressions.length ? `${regressions.length} regression${regressions.length === 1 ? "" : "s"} detected` : "No regressions detected"}</h4>
-        ${regressions.length ? table(regressions, "") : ""}
-        <h4>Metric deltas (candidate − base)</h4>
-        ${table(diff.metric_deltas || [], "No overlapping metrics between the two runs.")}
-        <h4>Forecast deltas${(diff.forecast_deltas || []).length >= 1000 ? " (first 1000)" : ""}</h4>
-        ${table(
-          (diff.forecast_deltas || [])
-            .slice()
-            .sort((a, b) =>
-              String(a.series_id).localeCompare(String(b.series_id)) ||
-              String(a.target_time).localeCompare(String(b.target_time))
-            )
-            .slice(0, 200),
-          "No overlapping forecast points between the two runs."
-        )}
-      `;
-    } catch (error) {
-      result.innerHTML = `<p class="status FAIL">Compare failed: ${escapeHtml(error.message)}</p>`;
-    }
-  });
-}
+/* ---------- Shared rendering helpers ---------- */
 
 function metricCard(label, value, caption = "", neutral = false) {
   const digits = neutral ? 0 : 3;
@@ -578,7 +755,7 @@ function metricCard(label, value, caption = "", neutral = false) {
 }
 
 function tabButton(tab, label) {
-  return `<button type="button" data-tab="${tab}" class="${state.activeTab === tab ? "active" : ""}">${label}</button>`;
+  return `<button type="button" data-tab="${tab}" class="${state.runTab === tab ? "active" : ""}">${label}</button>`;
 }
 
 function table(rows, emptyMessage = "No rows.") {
@@ -692,7 +869,7 @@ let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    if (state.detail) renderCharts();
+    if (state.detail && $("#chartGrid")) renderCharts();
   }, 150);
 });
 

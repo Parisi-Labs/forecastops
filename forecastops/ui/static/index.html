@@ -14,17 +14,12 @@
         <strong>ForecastOps</strong>
         <span class="badge">local</span>
       </div>
-      <div class="nav-label">Filters</div>
-      <div class="filters">
-        <select id="projectFilter" aria-label="Filter by project"></select>
-        <select id="statusFilter" aria-label="Filter by validation status">
-          <option value="">All statuses</option>
-          <option value="PASS">Pass</option>
-          <option value="WARN">Warn</option>
-          <option value="FAIL">Fail</option>
-        </select>
-        <input id="searchFilter" type="search" placeholder="Search runs" autocomplete="off" aria-label="Search runs">
-      </div>
+      <div class="nav-label">Workspace</div>
+      <nav class="nav">
+        <a href="#/runs" data-view="runs">Runs</a>
+        <a href="#/projects" data-view="projects">Projects</a>
+        <a href="#/compare" data-view="compare">Compare</a>
+      </nav>
       <div class="side-foot">
         <div class="nav-label">Store</div>
         <code id="storeInfo" class="store-info"></code>
@@ -32,36 +27,11 @@
     </aside>
     <div class="content">
       <header class="topbar">
-        <nav class="crumbs">Runs<span id="crumbRun"></span></nav>
-        <span id="runCount" class="count"></span>
+        <nav class="crumbs" id="crumbs">Runs</nav>
+        <span id="topMeta" class="count"></span>
         <button id="refreshButton" type="button" class="secondary">Refresh</button>
       </header>
-      <main>
-        <section class="runs-section">
-          <div class="table-wrap runs-table-wrap">
-            <table id="runsTable">
-              <thead>
-                <tr>
-                  <th data-sort="run_id">Run</th>
-                  <th data-sort="project_id">Project</th>
-                  <th data-sort="model_name">Model</th>
-                  <th data-sort="created_at">Created</th>
-                  <th data-sort="horizon_max" class="num">Horizon</th>
-                  <th data-sort="points_count" class="num">Points</th>
-                  <th data-sort="mae" class="num">MAE</th>
-                  <th data-sort="wape" class="num">WAPE</th>
-                  <th data-sort="bias" class="num">Bias</th>
-                  <th data-sort="coverage" class="num">Coverage</th>
-                  <th data-sort="skill_vs_benchmark" class="num">Skill</th>
-                  <th data-sort="validation_status">Validation</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-        <section id="detail" class="detail"></section>
-      </main>
+      <main id="view"></main>
     </div>
   </div>
   <script src="/static/app.js"></script>
