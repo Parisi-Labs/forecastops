@@ -47,6 +47,12 @@ dev = [
 otel = ["opentelemetry-sdk>=1.24"]
 all = ["opentelemetry-sdk>=1.24"]
 
+[project.urls]
+Homepage = "https://github.com/Parisi-Labs/forecastops"
+Repository = "https://github.com/Parisi-Labs/forecastops"
+Changelog = "https://github.com/Parisi-Labs/forecastops/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Parisi-Labs/forecastops/issues"
+
 [project.scripts]
 fops = "forecastops.cli.main:app"
 
