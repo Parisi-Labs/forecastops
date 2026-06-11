@@ -5,8 +5,10 @@ import os
 from _synthetic import daily_demand, forecast_from_history
 
 import forecastops as fops
+from forecastops.otel import configure_console_export
 
 os.environ["FOPS_OTEL_ENABLED"] = "true"
+configure_console_export()
 
 history = daily_demand(series_id="telemetry-demo")
 forecast_df, actuals_df = forecast_from_history(history)

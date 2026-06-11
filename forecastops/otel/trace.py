@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -10,8 +9,14 @@ from typing import Any
 
 from opentelemetry import trace as otel_trace
 
+from forecastops.core.config import load_config
 from forecastops.core.run import utc_now
 from forecastops.store.duckdb_index import DuckDBIndex
+
+
+def _otel_enabled() -> bool:
+    """Resolve the shared otel switch (forecastops.yaml + FOPS_OTEL_ENABLED)."""
+    return load_config().otel_enabled
 
 
 @dataclass(slots=True)
@@ -19,7 +24,7 @@ class ForecastTrace:
     index: DuckDBIndex
     run_id: str
     trace_id: str = field(default_factory=lambda: secrets.token_hex(16))
-    enabled: bool = field(default_factory=lambda: os.environ.get("FOPS_OTEL_ENABLED", "").lower() == "true")
+    enabled: bool = field(default_factory=_otel_enabled)
 
     @contextmanager
     def span(
