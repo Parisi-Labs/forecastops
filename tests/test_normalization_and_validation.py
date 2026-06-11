@@ -95,5 +95,5 @@ def test_array_adapter_requires_semantics() -> None:
 
     assert adapter.name == "array"
     assert normalized["yhat"].tolist() == [1.0, 2.0, 3.0]
+    assert normalized["target_time"].isna().sum() == 0
     assert normalized["series_id"].astype(str).unique().tolist() == ["meter"]
-

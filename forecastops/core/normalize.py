@@ -162,6 +162,10 @@ def _coerce_context_values(value: Any, length: int, name: str) -> list[Any]:
         if len(value) != length:
             raise ValueError(f"{name} length {len(value)} does not match forecast length {length}")
         return value.tolist()
+    if isinstance(value, pd.Index):
+        if len(value) != length:
+            raise ValueError(f"{name} length {len(value)} does not match forecast length {length}")
+        return value.tolist()
     if isinstance(value, np.ndarray):
         if value.shape[0] != length:
             raise ValueError(f"{name} length {value.shape[0]} does not match forecast length {length}")
@@ -229,4 +233,3 @@ def _infer_model_name(prediction_source: str, adapter_name: str) -> str:
     if adapter_name == "nixtla" and prediction_source not in {"yhat", "prediction", "forecast"}:
         return prediction_source
     return adapter_name
-
