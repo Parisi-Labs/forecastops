@@ -215,4 +215,6 @@ def _read_schema(path: Path | None) -> ForecastSchema | None:
         return None
     with path.open("r", encoding="utf-8") as handle:
         data: dict[str, Any] = yaml.safe_load(handle) or {}
+    if not data:
+        return None
     return ForecastSchema.from_dict(data.get("schema", data))
