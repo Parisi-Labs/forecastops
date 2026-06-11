@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,22 @@ class DuckDBIndex:
         self.store.init()
         self.path = self.store.db_path
 
-    def connect(self) -> duckdb.DuckDBPyConnection:
-        conn = duckdb.connect(str(self.path))
-        conn.execute("SET timezone='UTC'")
-        return conn
+    def connect(self, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+        last_error: Exception | None = None
+        attempts = 1 if read_only else 20
+        for attempt in range(attempts):
+            try:
+                conn = duckdb.connect(str(self.path), read_only=read_only)
+                conn.execute("SET timezone='UTC'")
+                return conn
+            except duckdb.IOException as exc:
+                last_error = exc
+                if "Could not set lock" not in str(exc) or read_only:
+                    raise
+                time.sleep(min(0.05 * (attempt + 1), 0.5))
+        if last_error:
+            raise last_error
+        raise RuntimeError("DuckDB connection failed")
 
     def init(self) -> None:
         with self.connect() as conn:
@@ -346,4 +359,3 @@ SCHEMA_STATEMENTS = [
     )
     """,
 ]
-
