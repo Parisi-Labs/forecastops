@@ -11,33 +11,46 @@ from forecastops.core.run import ArtifactRecord, ForecastRun, MetricRecord, Vali
 from forecastops.store.local import LocalStore
 
 
+def connect_with_retry(
+    path: str | Path,
+    *,
+    read_only: bool = False,
+    attempts: int = 20,
+) -> duckdb.DuckDBPyConnection:
+    """Connect to a DuckDB file, retrying with backoff while another process holds the lock."""
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            conn = duckdb.connect(str(path), read_only=read_only)
+            conn.execute("SET timezone='UTC'")
+            return conn
+        except duckdb.IOException as exc:
+            last_error = exc
+            if "Could not set lock" not in str(exc):
+                raise
+            time.sleep(min(0.05 * (attempt + 1), 0.5))
+    if last_error:
+        raise last_error
+    raise RuntimeError("DuckDB connection failed")
+
+
 class DuckDBIndex:
     def __init__(self, store: LocalStore):
         self.store = store
         self.store.init()
         self.path = self.store.db_path
+        self._initialized = False
 
     def connect(self, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-        last_error: Exception | None = None
-        attempts = 1 if read_only else 20
-        for attempt in range(attempts):
-            try:
-                conn = duckdb.connect(str(self.path), read_only=read_only)
-                conn.execute("SET timezone='UTC'")
-                return conn
-            except duckdb.IOException as exc:
-                last_error = exc
-                if "Could not set lock" not in str(exc) or read_only:
-                    raise
-                time.sleep(min(0.05 * (attempt + 1), 0.5))
-        if last_error:
-            raise last_error
-        raise RuntimeError("DuckDB connection failed")
+        return connect_with_retry(self.path, read_only=read_only)
 
     def init(self) -> None:
+        if self._initialized:
+            return
         with self.connect() as conn:
             for statement in SCHEMA_STATEMENTS:
                 conn.execute(statement)
+        self._initialized = True
 
     def upsert_project(self, project: str, metadata: dict[str, Any] | None = None) -> None:
         self.init()

@@ -10,7 +10,6 @@ import pandas as pd
 from forecastops.core.diff import diff as diff_runs
 from forecastops.store.duckdb_index import DuckDBIndex
 from forecastops.store.local import LocalStore
-from forecastops.store.parquet import read_artifact
 
 
 class UIQueries:
@@ -24,23 +23,46 @@ class UIQueries:
 
     def runs(self) -> list[dict[str, Any]]:
         query = """
+        with metric_summary as (
+          -- model-side aggregates only: benchmark rows share metric_name but
+          -- carry benchmark_name, except skill_* which is inherently benchmarked
+          select
+            run_id,
+            max(case when metric_name = 'mae' and slice_name is null and benchmark_name is null
+              then metric_value end) as mae,
+            max(case when metric_name = 'wape' and slice_name is null and benchmark_name is null
+              then metric_value end) as wape,
+            max(case when metric_name = 'bias' and slice_name is null and benchmark_name is null
+              then metric_value end) as bias,
+            max(case when metric_name = 'coverage' and slice_name is null and benchmark_name is null
+              then metric_value end) as coverage,
+            max(case when starts_with(metric_name, 'skill_') and slice_name is null then metric_value end)
+              as skill_vs_benchmark
+          from evaluation_metrics
+          group by run_id
+        ),
+        validation_summary as (
+          select
+            run_id,
+            case
+              when sum(case when severity = 'ERROR' then 1 else 0 end) > 0 then 'FAIL'
+              when sum(case when severity = 'WARN' then 1 else 0 end) > 0 then 'WARN'
+              else 'PASS'
+            end as validation_status
+          from validation_events
+          group by run_id
+        )
         select
           r.*,
-          max(case when m.metric_name = 'mae' and m.slice_name is null then m.metric_value end) as mae,
-          max(case when m.metric_name = 'wape' and m.slice_name is null then m.metric_value end) as wape,
-          max(case when m.metric_name = 'bias' and m.slice_name is null then m.metric_value end) as bias,
-          max(case when m.metric_name = 'coverage' and m.slice_name is null then m.metric_value end) as coverage,
-          max(case when starts_with(m.metric_name, 'skill_') and m.slice_name is null then m.metric_value end)
-            as skill_vs_benchmark,
-          case
-            when sum(case when v.severity = 'ERROR' then 1 else 0 end) > 0 then 'FAIL'
-            when sum(case when v.severity = 'WARN' then 1 else 0 end) > 0 then 'WARN'
-            else 'PASS'
-          end as validation_status
+          m.mae,
+          m.wape,
+          m.bias,
+          m.coverage,
+          m.skill_vs_benchmark,
+          coalesce(v.validation_status, 'PASS') as validation_status
         from runs r
-        left join evaluation_metrics m on r.run_id = m.run_id
-        left join validation_events v on r.run_id = v.run_id
-        group by all
+        left join metric_summary m on r.run_id = m.run_id
+        left join validation_summary v on r.run_id = v.run_id
         order by r.created_at desc
         """
         return _records(self._query(query))
@@ -102,10 +124,15 @@ class UIQueries:
         run = self.index.run_by_id(run_id)
         if not run:
             return []
-        frame = read_artifact(run["forecast_artifact_uri"])
+        query = "select * from read_parquet(?)"
+        params: list[Any] = [str(run["forecast_artifact_uri"])]
         if series_id:
-            frame = frame[frame["series_id"].astype(str) == str(series_id)]
-        frame = frame.sort_values(["series_id", "target_time"]).head(max(1, min(limit, 10000)))
+            query += " where cast(series_id as varchar) = ?"
+            params.append(str(series_id))
+        query += " order by series_id, target_time limit ?"
+        params.append(max(1, min(limit, 10000)))
+        with duckdb.connect() as conn:
+            frame = conn.execute(query, params).fetchdf()
         return _records(frame)
 
     def residuals(
@@ -116,19 +143,59 @@ class UIQueries:
         horizon_bucket: str | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
-        points = pd.DataFrame(self.forecast_points(run_id, series_id=series_id, limit=10000))
-        if points.empty or "actual" not in points:
+        run = self.index.run_by_id(run_id)
+        if not run:
             return []
-        points["target_time"] = pd.to_datetime(points["target_time"], errors="coerce")
-        points["cutoff_time"] = pd.to_datetime(points["cutoff_time"], errors="coerce")
-        points["residual"] = pd.to_numeric(points["yhat"], errors="coerce") - pd.to_numeric(
-            points["actual"], errors="coerce"
-        )
-        points["horizon_bucket"] = points.apply(_horizon_bucket, axis=1)
-        if horizon_bucket:
-            points = points[points["horizon_bucket"] == horizon_bucket]
-        points = points.dropna(subset=["residual"]).sort_values("target_time").head(limit)
-        return _records(points)
+        uri = str(run["forecast_artifact_uri"])
+        with duckdb.connect() as conn:
+            columns = conn.execute(
+                "select * from read_parquet(?) limit 0", [uri]
+            ).fetchdf().columns
+            if "actual" not in columns:
+                return []
+            series_filter = ""
+            params: list[Any] = [uri]
+            if series_id:
+                series_filter = "where cast(series_id as varchar) = ?"
+                params.append(str(series_id))
+            query = f"""
+            with points as (
+              select
+                *,
+                try_cast(yhat as double) - try_cast(actual as double) as residual,
+                date_diff(
+                  'second',
+                  try_cast(cutoff_time as timestamp),
+                  try_cast(target_time as timestamp)
+                ) / 3600.0 as _hours
+              from read_parquet(?)
+              {series_filter}
+            ),
+            bucketed as (
+              select
+                * exclude (_hours),
+                case
+                  when _hours is null then 'unknown'
+                  when _hours <= 1 then '0-1h'
+                  when _hours <= 6 then '1-6h'
+                  when _hours <= 24 then '6-24h'
+                  when _hours <= 48 then '24-48h'
+                  when _hours <= 24 * 7 then '48h-7d'
+                  else '7d+'
+                end as horizon_bucket
+              from points
+            )
+            select *
+            from bucketed
+            where residual is not null
+            """
+            if horizon_bucket:
+                query += " and horizon_bucket = ?"
+                params.append(horizon_bucket)
+            query += " order by try_cast(target_time as timestamp) limit ?"
+            params.append(max(1, limit))
+            frame = conn.execute(query, params).fetchdf()
+        return _records(frame)
 
     def diff(self, base_run_id: str, candidate_run_id: str) -> dict[str, Any]:
         base = self.index.run_by_id(base_run_id)
@@ -157,7 +224,7 @@ class UIQueries:
         return {"ok": True, "store": str(self.store.root), "db": str(self.store.db_path)}
 
     def _query(self, query: str, *params: Any) -> pd.DataFrame:
-        with duckdb.connect(str(self.store.db_path), read_only=True) as conn:
+        with self.index.connect(read_only=True) as conn:
             return conn.execute(query, params).fetchdf()
 
 
@@ -176,22 +243,4 @@ def _json_safe(value: Any) -> Any:
     if pd.isna(value):
         return None
     return value
-
-
-def _horizon_bucket(row: pd.Series) -> str:
-    duration = row["target_time"] - row["cutoff_time"]
-    if pd.isna(duration):
-        return "unknown"
-    hours = duration.total_seconds() / 3600
-    if hours <= 1:
-        return "0-1h"
-    if hours <= 6:
-        return "1-6h"
-    if hours <= 24:
-        return "6-24h"
-    if hours <= 48:
-        return "24-48h"
-    if hours <= 24 * 7:
-        return "48h-7d"
-    return "7d+"
 

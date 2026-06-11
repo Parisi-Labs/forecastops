@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pandas as pd
 
 from forecastops.core.run import ForecastRun
@@ -37,9 +36,9 @@ def report(
         raise ValueError(f"Run {run_id!r} not found")
 
     forecast = read_artifact(run_record["forecast_artifact_uri"])
-    metrics = _query(index.path, "select * from evaluation_metrics where run_id = ? order by metric_name", run_id)
-    validation = _query(index.path, "select * from validation_events where run_id = ? order by severity", run_id)
-    artifacts = _query(index.path, "select * from artifacts where run_id = ? order by artifact_type", run_id)
+    metrics = _query(index, "select * from evaluation_metrics where run_id = ? order by metric_name", run_id)
+    validation = _query(index, "select * from validation_events where run_id = ? order by severity", run_id)
+    artifacts = _query(index, "select * from artifacts where run_id = ? order by artifact_type", run_id)
 
     output = Path(out) if out else local_store.reports_dir / f"{run_id}.html"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -47,17 +46,17 @@ def report(
         _render_html(run_record, forecast, metrics, validation, artifacts),
         encoding="utf-8",
     )
-    _update_report_uri(index.path, run_id, output)
+    _update_report_uri(index, run_id, output)
     return output
 
 
-def _query(db_path: Path, query: str, *params: Any) -> pd.DataFrame:
-    with duckdb.connect(str(db_path), read_only=True) as conn:
+def _query(index: DuckDBIndex, query: str, *params: Any) -> pd.DataFrame:
+    with index.connect(read_only=True) as conn:
         return conn.execute(query, params).fetchdf()
 
 
-def _update_report_uri(db_path: Path, run_id: str, output: Path) -> None:
-    with duckdb.connect(str(db_path)) as conn:
+def _update_report_uri(index: DuckDBIndex, run_id: str, output: Path) -> None:
+    with index.connect() as conn:
         conn.execute("update runs set report_uri = ? where run_id = ?", [str(output.resolve()), run_id])
 
 

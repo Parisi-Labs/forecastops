@@ -269,7 +269,7 @@ async function renderRunView(runId) {
 
   const metricLookup = Object.fromEntries(
     (run.metrics || [])
-      .filter((metric) => metric.slice_name === null)
+      .filter((metric) => metric.slice_name === null && metric.benchmark_name === null)
       .map((metric) => [metric.metric_name, metric.metric_value])
   );
   const seriesSelector =
