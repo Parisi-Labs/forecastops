@@ -100,17 +100,17 @@ def compute_metrics(
 ) -> list[MetricRecord]:
     records: list[MetricRecord] = []
     groups: list[tuple[str | None, str | None, pd.DataFrame]] = [(None, None, frame)]
-    for slice_name in slices:
-        if slice_name not in frame:
+    for requested_slice in slices:
+        if requested_slice not in frame:
             continue
-        if frame[slice_name].nunique(dropna=True) > max_slice_cardinality:
+        if frame[requested_slice].nunique(dropna=True) > max_slice_cardinality:
             continue
-        for value, group in frame.groupby(slice_name, dropna=False):
-            groups.append((slice_name, str(value), group))
+        for value, group in frame.groupby(requested_slice, dropna=False):
+            groups.append((requested_slice, str(value), group))
 
     seen: set[tuple[str, str | None, str | None, str | None]] = set()
     for slice_name, slice_value, group in groups:
-        horizon_bucket = slice_value if slice_name == "horizon_bucket" else None
+        horizon_bucket: str | None = slice_value if slice_name == "horizon_bucket" else None
         for metric_name in metrics:
             value = _metric_value(group, metric_name)
             if value is None or not np.isfinite(value):

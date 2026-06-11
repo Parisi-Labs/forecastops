@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Any
 
 from forecastops.core.capture import capture
+from forecastops.core.run import ForecastRun
 
 
 def forecast(**capture_kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -30,7 +31,7 @@ def wrap(model: Any, *, return_run: bool = False, **capture_kwargs: Any) -> Any:
     class ForecastOpsModelWrapper:
         def __init__(self, wrapped: Any):
             self._wrapped = wrapped
-            self.fops_last_run = None
+            self.fops_last_run: ForecastRun | None = None
 
         def fit(self, *args: Any, **kwargs: Any) -> Any:
             result = self._wrapped.fit(*args, **kwargs)
@@ -73,4 +74,3 @@ def _resolve_callable_kwargs(
         else:
             resolved[key] = value
     return resolved
-
