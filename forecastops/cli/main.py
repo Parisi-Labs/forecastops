@@ -172,8 +172,17 @@ def ui(
     port: int | None = typer.Option(None, help="Bind port."),
     store: Path | None = typer.Option(None, help="Local store path."),
     no_open: bool = typer.Option(False, help="Do not open a browser window."),
+    allow_remote: bool = typer.Option(
+        False, help="Allow binding to a non-loopback host (no authentication; use with care)."
+    ),
 ) -> None:
-    launch_ui(host=host, port=port, store=store, open_browser=not no_open)
+    launch_ui(
+        host=host,
+        port=port,
+        store=store,
+        open_browser=not no_open,
+        allow_remote=allow_remote,
+    )
 
 
 @app.command()

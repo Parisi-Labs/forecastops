@@ -13,6 +13,7 @@ from forecastops.core.config import load_config
 from forecastops.ui.queries import UIQueries
 
 STATIC_DIR = Path(__file__).parent / "static"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def create_app(*, store: str | Path | None = None) -> FastAPI:
@@ -94,12 +95,17 @@ def ui(
     port: int | None = None,
     store: str | Path | None = None,
     open_browser: bool = True,
+    allow_remote: bool = False,
 ) -> None:
     config = load_config()
     resolved_host = host or config.ui_host
     resolved_port = port or config.ui_port
-    if resolved_host == "0.0.0.0":
-        print("Warning: ForecastOps UI is binding to 0.0.0.0. Local-only mode uses 127.0.0.1.")
+    if resolved_host not in LOOPBACK_HOSTS and not allow_remote:
+        raise SystemExit(
+            f"Refusing to bind the ForecastOps UI to non-loopback host {resolved_host!r}. "
+            "The UI has no authentication; use 127.0.0.1 (default) or pass "
+            "--allow-remote / allow_remote=True to expose it to the network."
+        )
     url = f"http://{resolved_host}:{resolved_port}"
     if open_browser:
         webbrowser.open(url)
