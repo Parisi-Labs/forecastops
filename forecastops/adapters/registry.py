@@ -4,8 +4,11 @@ from typing import Any
 
 from forecastops.adapters.base import ForecastAdapter
 from forecastops.adapters.dataframe import ArrayAdapter, GenericDataFrameAdapter, SchemaDataFrameAdapter
+from forecastops.adapters.darts import DartsAdapter
+from forecastops.adapters.gluonts import GluonTSAdapter
 from forecastops.adapters.nixtla import NixtlaAdapter
 from forecastops.adapters.prophet import ProphetAdapter
+from forecastops.adapters.sklearn import SklearnArrayAdapter
 from forecastops.core.run import CaptureContext
 
 _CUSTOM_ADAPTERS: dict[str, ForecastAdapter] = {}
@@ -21,9 +24,12 @@ def adapter(name: str):
 
 def builtin_adapters() -> list[ForecastAdapter]:
     return [
+        DartsAdapter(),
+        GluonTSAdapter(),
         ProphetAdapter(),
         NixtlaAdapter(),
         GenericDataFrameAdapter(),
+        SklearnArrayAdapter(),
         ArrayAdapter(),
     ]
 
@@ -47,4 +53,3 @@ def resolve_adapter(obj: Any, adapter_name: str | None, context: CaptureContext)
     if not candidates:
         raise ValueError("Could not detect a ForecastOps adapter. Supply adapter= or schema= explicitly.")
     return sorted(candidates, key=lambda item: item[0], reverse=True)[0][1]
-

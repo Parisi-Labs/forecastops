@@ -72,7 +72,12 @@ def attach_benchmark(
     *,
     benchmark_name: str = "benchmark",
 ) -> pd.DataFrame:
-    benchmark_frame = _normalize_benchmark(benchmark, benchmark_name)
+    default_series = (
+        str(frame["series_id"].dropna().iloc[0])
+        if "series_id" in frame and frame["series_id"].nunique(dropna=True) == 1
+        else "default"
+    )
+    benchmark_frame = _normalize_benchmark(benchmark, benchmark_name, default_series_id=default_series)
     keys = ["series_id", "target_time"]
     if "cutoff_time" in benchmark_frame and benchmark_frame["cutoff_time"].notna().any():
         keys = ["series_id", "cutoff_time", "target_time"]
@@ -83,7 +88,11 @@ def attach_benchmark(
     return base.merge(benchmark_frame, on=keys, how="left", suffixes=("", "_benchmark"))
 
 
-def _normalize_benchmark(benchmark: pd.DataFrame, benchmark_name: str) -> pd.DataFrame:
+def _normalize_benchmark(
+    benchmark: pd.DataFrame,
+    benchmark_name: str,
+    default_series_id: str = "default",
+) -> pd.DataFrame:
     out = benchmark.copy()
     rename: dict[str, str] = {}
     if "series_id" not in out and "unique_id" in out:
@@ -97,7 +106,7 @@ def _normalize_benchmark(benchmark: pd.DataFrame, benchmark_name: str) -> pd.Dat
                 break
     out = out.rename(columns=rename)
     if "series_id" not in out:
-        out["series_id"] = "default"
+        out["series_id"] = default_series_id
     if "benchmark_name" not in out:
         out["benchmark_name"] = benchmark_name
     keep = [
@@ -167,4 +176,3 @@ def _resolve_run_frame(run: ForecastRun | pd.DataFrame | str | Path) -> tuple[pd
         return run.copy(), str(run["run_id"].iloc[0])
     frame = read_artifact(run)
     return frame, str(frame["run_id"].iloc[0])
-

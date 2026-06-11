@@ -61,7 +61,12 @@ def evaluate(
 
 
 def attach_actuals(frame: pd.DataFrame, actuals: pd.DataFrame) -> pd.DataFrame:
-    actual_frame = _normalize_actuals(actuals)
+    default_series = (
+        str(frame["series_id"].dropna().iloc[0])
+        if "series_id" in frame and frame["series_id"].nunique(dropna=True) == 1
+        else "default"
+    )
+    actual_frame = _normalize_actuals(actuals, default_series_id=default_series)
     keys = ["series_id", "target_time"]
     if "cutoff_time" in actual_frame and actual_frame["cutoff_time"].notna().any():
         keys = ["series_id", "cutoff_time", "target_time"]
@@ -171,7 +176,7 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
     return None
 
 
-def _normalize_actuals(actuals: pd.DataFrame) -> pd.DataFrame:
+def _normalize_actuals(actuals: pd.DataFrame, default_series_id: str = "default") -> pd.DataFrame:
     out = actuals.copy()
     rename: dict[str, str] = {}
     if "series_id" not in out and "unique_id" in out:
@@ -185,7 +190,7 @@ def _normalize_actuals(actuals: pd.DataFrame) -> pd.DataFrame:
             rename["value"] = "actual"
     out = out.rename(columns=rename)
     if "series_id" not in out:
-        out["series_id"] = "default"
+        out["series_id"] = default_series_id
     keep = [
         column
         for column in ["series_id", "cutoff_time", "target_time", "actual", "actual_available_at"]
@@ -245,4 +250,3 @@ def _metric_id(
     if slice_name:
         parts.extend([slice_name, slice_value or "null"])
     return ":".join(parts)
-

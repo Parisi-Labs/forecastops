@@ -14,6 +14,7 @@ from forecastops.core.run import CaptureContext, ForecastRun, make_run_id, utc_n
 from forecastops.core.schema import ForecastSchema
 from forecastops.core.validate import validate_forecast, validation_status
 from forecastops.otel import semconv
+from forecastops.otel.metrics import ForecastMetricEmitter
 from forecastops.otel.trace import ForecastTrace
 from forecastops.store.duckdb_index import DuckDBIndex, summarize_frame
 from forecastops.store.local import LocalStore
@@ -155,11 +156,8 @@ def capture(
                     ).metrics
 
     model_name_resolved = str(frame["model_name"].dropna().iloc[0]) if "model_name" in frame else "unknown"
-    model_version_resolved = (
-        str(frame["model_version"].dropna().iloc[0])
-        if "model_version" in frame and frame["model_version"].dropna().any()
-        else model_version
-    )
+    model_version_values = frame["model_version"].dropna() if "model_version" in frame else pd.Series([])
+    model_version_resolved = str(model_version_values.iloc[0]) if not model_version_values.empty else model_version
     run = ForecastRun(
         run_id=run_id,
         project=project,
@@ -193,7 +191,17 @@ def capture(
     index.insert_artifacts(artifacts)
     index.insert_validation_events(run_id, events)
     index.insert_metrics(metric_records)
+    if config.otel_enabled and metric_records:
+        ForecastMetricEmitter().emit(
+            metric_records,
+            base_attributes={
+                semconv.FORECAST_PROJECT_NAME: project,
+                semconv.FORECAST_MODEL_NAME: run.model_name,
+                semconv.FORECAST_MODEL_VERSION: run.model_version,
+                semconv.FORECAST_RUN_KIND: run_kind,
+                semconv.FORECAST_ADAPTER_NAME: run.adapter_name,
+            },
+        )
     index.insert_run(run=run, summary=summary)
     write_run_manifest(run)
     return run
-
