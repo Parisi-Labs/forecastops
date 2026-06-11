@@ -223,16 +223,18 @@ class DuckDBIndex:
             )
 
     def latest_run_id(self) -> str | None:
-        self.init()
-        with self.connect() as conn:
+        if not self.path.exists():
+            self.init()
+        with self.connect(read_only=True) as conn:
             result = conn.execute(
                 "select run_id from runs order by created_at desc limit 1"
             ).fetchone()
         return result[0] if result else None
 
     def run_by_id(self, run_id: str) -> dict[str, Any] | None:
-        self.init()
-        with self.connect() as conn:
+        if not self.path.exists():
+            self.init()
+        with self.connect(read_only=True) as conn:
             result = conn.execute("select * from runs where run_id = ?", [run_id]).fetchdf()
         if result.empty:
             return None
