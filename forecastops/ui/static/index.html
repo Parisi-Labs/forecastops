@@ -7,78 +7,52 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="shell">
-    <aside class="rail">
-      <div class="brand">
-        <span class="brand-mark">Fo</span>
-        <div>
-          <strong>ForecastOps</strong>
-          <small>local only</small>
-        </div>
+  <header class="topbar">
+    <div class="brand">
+      <strong>ForecastOps</strong>
+      <span class="badge">local</span>
+    </div>
+    <code id="storeInfo" class="store-info" title="Store location"></code>
+    <button id="refreshButton" type="button">Refresh</button>
+  </header>
+  <main>
+    <section class="runs-section">
+      <div class="toolbar">
+        <select id="projectFilter" aria-label="Filter by project"></select>
+        <select id="statusFilter" aria-label="Filter by validation status">
+          <option value="">All statuses</option>
+          <option value="PASS">Pass</option>
+          <option value="WARN">Warn</option>
+          <option value="FAIL">Fail</option>
+        </select>
+        <input id="searchFilter" type="search" placeholder="Search run, project, model, adapter" autocomplete="off" aria-label="Search runs">
+        <span id="runCount" class="count"></span>
       </div>
-      <div class="filters">
-        <label>
-          Project
-          <select id="projectFilter"></select>
-        </label>
-        <label>
-          Status
-          <select id="statusFilter">
-            <option value="">All</option>
-            <option value="PASS">Pass</option>
-            <option value="WARN">Warn</option>
-            <option value="FAIL">Fail</option>
-          </select>
-        </label>
-        <label>
-          Search
-          <input id="searchFilter" type="search" autocomplete="off">
-        </label>
+      <div class="table-wrap runs-table-wrap">
+        <table id="runsTable">
+          <thead>
+            <tr>
+              <th data-sort="run_id">Run</th>
+              <th data-sort="project_id">Project</th>
+              <th data-sort="model_name">Model</th>
+              <th data-sort="adapter_name">Adapter</th>
+              <th data-sort="created_at">Created</th>
+              <th data-sort="horizon_max" class="num">Horizon</th>
+              <th data-sort="points_count" class="num">Points</th>
+              <th data-sort="mae" class="num">MAE</th>
+              <th data-sort="wape" class="num">WAPE</th>
+              <th data-sort="bias" class="num">Bias</th>
+              <th data-sort="coverage" class="num">Coverage</th>
+              <th data-sort="skill_vs_benchmark" class="num">Skill</th>
+              <th data-sort="validation_status">Validation</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <div id="storeInfo" class="store-info"></div>
-    </aside>
-    <main>
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Run index</p>
-          <h1>Forecast Control Room</h1>
-        </div>
-        <button id="refreshButton" type="button">Refresh</button>
-      </header>
-      <section class="runs-section">
-        <div class="section-head">
-          <h2>Runs</h2>
-          <span id="runCount"></span>
-        </div>
-        <div class="runs-table-wrap">
-          <table id="runsTable">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Project</th>
-                <th>Model</th>
-                <th>Adapter</th>
-                <th>Created</th>
-                <th>Horizon</th>
-                <th>Points</th>
-                <th>MAE</th>
-                <th>WAPE</th>
-                <th>Bias</th>
-                <th>Coverage</th>
-                <th>Skill</th>
-                <th>Validation</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-      <section id="detail" class="detail empty-state">
-        <h2>No run selected</h2>
-      </section>
-    </main>
-  </div>
+    </section>
+    <section id="detail" class="detail"></section>
+  </main>
   <script src="/static/app.js"></script>
 </body>
 </html>
-
