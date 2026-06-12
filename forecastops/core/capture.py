@@ -149,6 +149,12 @@ def capture(
 
         metric_records = []
         if "actual" in frame and frame["actual"].notna().any():
+            # Slice metrics by horizon plus any preserved categorical columns (region,
+            # holiday_flag, event_type, ...) so "error by regime" works out of the box.
+            # High-cardinality columns are dropped downstream by max_slice_cardinality.
+            extra_columns = schema_obj.extra_columns if schema_obj is not None else []
+            slice_columns = [column for column in extra_columns if column in frame.columns]
+            eval_slices = ["horizon_bucket", *dict.fromkeys(slice_columns)]
             has_benchmark = "benchmark_yhat" in frame and frame["benchmark_yhat"].notna().any()
             if has_benchmark:
                 # compare() computes the full model-side metric set (including count), so
@@ -158,6 +164,7 @@ def capture(
                         frame,
                         benchmark_name=benchmark_name,
                         run_id=run_id,
+                        slices=eval_slices,
                         max_slice_cardinality=config.max_slice_cardinality,
                     ).metrics
             else:
@@ -165,6 +172,7 @@ def capture(
                     metric_records = evaluate(
                         frame,
                         run_id=run_id,
+                        slices=eval_slices,
                         max_slice_cardinality=config.max_slice_cardinality,
                     ).metrics
 

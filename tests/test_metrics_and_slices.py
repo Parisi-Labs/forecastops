@@ -79,3 +79,43 @@ def test_capture_includes_new_metrics(isolated_store: Path) -> None:
     )
 
     assert any(metric.metric_name == "smape" for metric in run.metrics)
+
+
+def test_capture_slices_metrics_by_extra_column(isolated_store: Path) -> None:
+    times = pd.date_range("2026-01-02", periods=4, freq="D")
+    forecast = pd.DataFrame(
+        {
+            "series_id": ["east"] * 4 + ["west"] * 4,
+            "target_time": list(times) * 2,
+            "prediction": [10.0, 11.0, 12.0, 13.0, 20.0, 21.0, 22.0, 23.0],
+            "region": ["east"] * 4 + ["west"] * 4,
+        }
+    )
+    actuals = pd.DataFrame(
+        {
+            "series_id": ["east"] * 4 + ["west"] * 4,
+            "target_time": list(times) * 2,
+            "actual": [10.5, 10.5, 12.5, 12.5, 19.0, 22.0, 21.0, 24.0],
+        }
+    )
+
+    run = fops.capture(
+        forecast,
+        project="slice-test",
+        schema=fops.ForecastSchema(
+            series_id="series_id",
+            target_time="target_time",
+            prediction="prediction",
+            extra_columns=["region"],
+        ),
+        cutoff=pd.Timestamp("2026-01-01"),
+        actuals=actuals,
+        store=isolated_store,
+    )
+
+    region_slices = {
+        metric.slice_value
+        for metric in run.metrics
+        if metric.slice_name == "region" and metric.metric_name == "mae"
+    }
+    assert region_slices == {"east", "west"}
