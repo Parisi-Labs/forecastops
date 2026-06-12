@@ -12,9 +12,11 @@ METRIC_NAME_MAP = {
     "mae": "forecast.error.mae",
     "rmse": "forecast.error.rmse",
     "wape": "forecast.error.wape",
+    "smape": "forecast.error.smape",
     "bias": "forecast.error.bias",
     "coverage": "forecast.probabilistic.coverage",
     "interval_width": "forecast.probabilistic.interval_width",
+    "pinball": "forecast.probabilistic.pinball",
 }
 
 _INSTRUMENT_SCOPE = "forecastops"
