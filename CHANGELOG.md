@@ -20,6 +20,13 @@
 - Group detail page showing per-metric mean ± std and stability across a
   group's runs (e.g. a backtest across windows).
 
+### Changed
+
+- The Nixtla adapter now parses `<model>-lo-<level>`/`<model>-hi-<level>`
+  prediction-interval columns into interval bounds and per-level quantile
+  columns, so coverage, interval width, and pinball loss work for
+  statsforecast/neuralforecast outputs.
+
 ## 0.1.0 — 2026-06-11
 
 Initial public release.
