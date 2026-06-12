@@ -19,7 +19,12 @@ from forecastops.core.evaluate import (
 from forecastops.core.run import ForecastRun, MetricRecord, utc_now
 from forecastops.store.parquet import read_artifact
 
-LOSS_METRICS = {"mae", "rmse", "wape"}
+# Lower-is-better metrics that get a skill score vs. the benchmark.
+LOSS_METRICS = {"mae", "rmse", "wape", "smape"}
+
+# Metrics that depend on quantile columns; the benchmark frame carries no benchmark
+# quantiles, so computing them benchmark-side would silently reuse the model's columns.
+_QUANTILE_METRICS = {"pinball"}
 
 
 @dataclass(slots=True)
@@ -48,7 +53,13 @@ def compare(
         raise ValueError("benchmark_yhat is required for benchmark comparison")
 
     selected_metrics = list(metrics or DEFAULT_METRICS)
-    benchmark_side_metrics = [metric for metric in selected_metrics if metric != "count"]
+    # The benchmark frame has no benchmark-side quantile columns, so quantile metrics
+    # (pinball) would silently reuse the model's columns and mislabel them — skip them.
+    benchmark_side_metrics = [
+        metric
+        for metric in selected_metrics
+        if metric != "count" and metric not in _QUANTILE_METRICS
+    ]
     model_frame = prepare_evaluation_frame(frame)
     benchmark_frame = frame.copy()
     benchmark_frame["yhat"] = benchmark_frame["benchmark_yhat"]
