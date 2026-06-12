@@ -64,6 +64,8 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 
 ## Local UI
 
+<img width="3520" height="2394" alt="CleanShot 2026-06-12 at 10 45 00@2x" src="https://github.com/user-attachments/assets/0115c5fe-260f-4eb1-8033-63da784651bf" />
+
 `fops ui` serves a read-only explorer for the local store:
 
 - **Runs** — every captured run with horizon, points, MAE, WAPE, bias,
