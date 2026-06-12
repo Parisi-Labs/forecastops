@@ -9,9 +9,11 @@ import typer
 import yaml
 
 from forecastops.adapters.registry import resolve_adapter
+from forecastops.core.backtest import backtest as backtest_panel
 from forecastops.core.capture import capture
 from forecastops.core.compare import compare as compare_run
 from forecastops.core.config import load_config, write_default_config
+from forecastops.core.diagnose import diagnose as diagnose_run
 from forecastops.core.diff import diff as diff_runs
 from forecastops.core.evaluate import evaluate as evaluate_run
 from forecastops.core.report import report as generate_report
@@ -50,6 +52,7 @@ def capture_file(
     benchmark: Path | None = typer.Option(None, help="Benchmark dataframe file."),
     benchmark_name: str = typer.Option("benchmark", help="Benchmark name."),
     model_name: str | None = typer.Option(None, help="Model name."),
+    group: str | None = typer.Option(None, help="Experiment/group name to tag this run."),
     store: Path | None = typer.Option(None, help="Local store path."),
 ) -> None:
     forecast = _read_frame(forecast_path)
@@ -64,9 +67,53 @@ def capture_file(
         benchmark=_read_frame(benchmark) if benchmark else None,
         benchmark_name=benchmark_name,
         model_name=model_name,
+        group=group,
         store=store,
     )
     typer.echo(json.dumps({"run_id": run.run_id, "status": run.status}, indent=2))
+
+
+@app.command()
+def backtest(
+    panel_path: Path = typer.Argument(..., help="Rolling-origin forecast panel file."),
+    group: str = typer.Option(..., help="Backtest group name."),
+    project: str = typer.Option("default", help="Project name."),
+    schema: Path | None = typer.Option(None, help="YAML schema mapping."),
+    actuals: Path | None = typer.Option(None, help="Actuals dataframe file."),
+    cutoff_col: str = typer.Option("cutoff", help="Column holding each window's origin."),
+    model_name: str | None = typer.Option(None, help="Model name."),
+    store: Path | None = typer.Option(None, help="Local store path."),
+) -> None:
+    result = backtest_panel(
+        _read_frame(panel_path),
+        group=group,
+        project=project,
+        schema=_read_schema(schema),
+        actuals=_read_frame(actuals) if actuals else None,
+        cutoff_col=cutoff_col,
+        model_name=model_name,
+        store=store,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "group_id": result.group_id,
+                "windows": result.windows,
+                "aggregate": result.aggregate.to_dict(orient="records"),
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@app.command()
+def diagnose(
+    run_id: str = typer.Argument(..., help="Run id to diagnose."),
+    store: Path | None = typer.Option(None, help="Local store path."),
+    top_k: int = typer.Option(5, help="How many worst horizons/series/regimes to include."),
+) -> None:
+    typer.echo(json.dumps(diagnose_run(run_id, store=store, top_k=top_k), indent=2, default=str))
 
 
 @app.command()

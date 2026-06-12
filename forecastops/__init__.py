@@ -3,6 +3,7 @@
 from forecastops.core.backtest import backtest
 from forecastops.core.capture import capture
 from forecastops.core.compare import compare
+from forecastops.core.diagnose import diagnose
 from forecastops.core.diff import diff
 from forecastops.core.evaluate import evaluate
 from forecastops.core.report import report
@@ -15,6 +16,7 @@ __all__ = [
     "backtest",
     "capture",
     "compare",
+    "diagnose",
     "diff",
     "evaluate",
     "forecast",
