@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- `fops.diagnose(run_id)` (and `fops diagnose <run_id>`): a compact,
+  machine-readable run diagnosis — overall metrics, skill, worst
+  horizons/series/regimes, validation, and artifact URIs — for agents and
+  scripts. Worst-series is aggregated server-side over the full artifact.
+- `fops backtest` CLI command, and a `group` option on `fops capture`.
+- The root capture trace span now carries the run's semantic context
+  (adapter, group, cutoff/target ranges, horizon, series/points counts,
+  validation status, artifact URIs) instead of just project/run/kind.
+
+### Fixed
+
+- `compare()` no longer computes benchmark-side pinball from the model's
+  quantile columns; quantile metrics are skipped on the benchmark side.
+- `sMAPE` now gets a skill score vs. the benchmark.
+- The local UI reports the installed package version instead of a hardcoded
+  `0.1.0`.
+
 ## 0.2.0 — 2026-06-12
 
 ### Added

@@ -82,14 +82,16 @@ def capture(
     trace = ForecastTrace(index=index, run_id=run_id)
     started_at = utc_now()
     artifacts = []
-    with trace.span(
-        semconv.SPAN_FORECAST_RUN,
-        attributes={
-            semconv.FORECAST_PROJECT_NAME: project,
-            semconv.FORECAST_RUN_ID: run_id,
-            semconv.FORECAST_RUN_KIND: run_kind,
-        },
-    ) as root_span_id:
+    # Held by reference and persisted when the span closes, so it can be enriched
+    # in-place once the run's facts (counts, validation, artifacts) are known.
+    root_attributes: dict[str, Any] = {
+        semconv.FORECAST_PROJECT_NAME: project,
+        semconv.FORECAST_RUN_ID: run_id,
+        semconv.FORECAST_RUN_KIND: run_kind,
+    }
+    if group:
+        root_attributes[semconv.FORECAST_GROUP_NAME] = group
+    with trace.span(semconv.SPAN_FORECAST_RUN, attributes=root_attributes) as root_span_id:
         with trace.span(semconv.SPAN_ADAPTER_DETECT, parent_span_id=root_span_id):
             adapter_impl = resolve_adapter(obj, adapter, context)
         with trace.span(semconv.SPAN_OUTPUT_NORMALIZE, parent_span_id=root_span_id):
@@ -177,6 +179,33 @@ def capture(
                         slices=eval_slices,
                         max_slice_cardinality=config.max_slice_cardinality,
                     ).metrics
+
+        # Enrich the root span with the run's semantic context, so traces carry the
+        # forecasting state an agent needs, not just step timings.
+        span_summary = summarize_frame(frame)
+        root_attributes.update(
+            {
+                key: value
+                for key, value in {
+                    semconv.FORECAST_ADAPTER_NAME: normalized.adapter_name,
+                    semconv.FORECAST_MODEL_NAME: context.model_name or model_name,
+                    semconv.FORECAST_MODEL_VERSION: model_version,
+                    semconv.FORECAST_CUTOFF_START: span_summary.get("cutoff_start"),
+                    semconv.FORECAST_CUTOFF_END: span_summary.get("cutoff_end"),
+                    semconv.FORECAST_TARGET_START: span_summary.get("target_start"),
+                    semconv.FORECAST_TARGET_END: span_summary.get("target_end"),
+                    semconv.FORECAST_HORIZON_MIN: span_summary.get("horizon_min"),
+                    semconv.FORECAST_HORIZON_MAX: span_summary.get("horizon_max"),
+                    semconv.FORECAST_SERIES_COUNT: span_summary.get("series_count"),
+                    semconv.FORECAST_POINTS_COUNT: span_summary.get("points_count"),
+                    semconv.FORECAST_VALIDATION_STATUS: validation_status(events),
+                    semconv.FORECAST_ARTIFACT_FORECAST_URI: forecast_artifact.uri,
+                    semconv.FORECAST_ARTIFACT_ACTUALS_URI: actuals_artifact_uri,
+                    semconv.FORECAST_ARTIFACT_BENCHMARK_URI: benchmark_artifact_uri,
+                }.items()
+                if value is not None
+            }
+        )
 
     model_name_resolved = str(frame["model_name"].dropna().iloc[0]) if "model_name" in frame else "unknown"
     model_version_values = frame["model_version"].dropna() if "model_version" in frame else pd.Series([])

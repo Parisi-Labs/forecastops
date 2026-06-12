@@ -92,6 +92,9 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 - `backtest`: evaluate a rolling-origin forecast panel as one grouped run set,
   with per-cutoff and aggregate (mean/std) metrics.
 - `diff`: compare two captured runs.
+- `diagnose`: a machine-readable diagnosis of a run — overall metrics, skill,
+  worst horizons/series/regimes, validation, and artifact URIs — for agents and
+  scripts (`fops diagnose <run_id>`).
 - groups: tag related runs with `capture(group=...)` (or a `backtest`) and
   browse them together in the UI.
 - local store: `.forecastops/forecastops.duckdb` plus Parquet artifacts.
