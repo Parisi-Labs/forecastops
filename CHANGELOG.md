@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-06-12
+
 ### Added
 
 - `sMAPE` and `pinball` (quantile) loss metrics. sMAPE is a scale-free ratio
