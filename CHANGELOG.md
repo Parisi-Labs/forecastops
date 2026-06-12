@@ -10,6 +10,11 @@
 - Metrics are now sliced by any categorical columns preserved via a schema's
   `extra_columns` (e.g. region, holiday_flag, event_type), in addition to
   horizon buckets, so error-by-regime breakdowns appear automatically.
+- Experiment groups: `capture(group="...")` tags related runs into a named
+  group, with a new Groups view in the UI and a `/api/groups` endpoint.
+- `fops.backtest(...)`: evaluate a rolling-origin forecast panel as one
+  grouped backtest, returning per-cutoff and aggregate (mean/std) metrics.
+  Existing stores are migrated in place to add the group columns.
 
 ## 0.1.0 — 2026-06-11
 
