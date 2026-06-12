@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import webbrowser
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,15 @@ STATIC_DIR = Path(__file__).parent / "static"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
+def _package_version() -> str:
+    try:
+        return version("forecastops")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
 def create_app(*, store: str | Path | None = None) -> FastAPI:
-    app = FastAPI(title="ForecastOps Local UI", version="0.1.0")
+    app = FastAPI(title="ForecastOps Local UI", version=_package_version())
     queries = UIQueries(store)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
