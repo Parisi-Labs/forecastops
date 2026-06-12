@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +11,23 @@ import pandas as pd
 from forecastops.core.run import ForecastRun, MetricRecord, utc_now
 from forecastops.store.parquet import read_artifact
 
-DEFAULT_METRICS = ["mae", "rmse", "wape", "bias", "count", "coverage", "interval_width"]
+DEFAULT_METRICS = [
+    "mae",
+    "rmse",
+    "wape",
+    "smape",
+    "bias",
+    "count",
+    "coverage",
+    "interval_width",
+    "pinball",
+]
+
+# Quantile prediction columns, e.g. yhat_p10, yhat_p90 — the capture group is the percentile.
+_QUANTILE_COLUMN = re.compile(r"yhat_p(\d{1,2})")
+
+# Metrics that need observed actuals; skipped (returning None) when actuals are absent.
+_ACTUAL_METRICS = {"mae", "rmse", "wape", "smape", "bias", "coverage", "pinball"}
 
 
 @dataclass(slots=True)
@@ -210,7 +227,7 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
     has_actual = "actual" in frame and frame["actual"].notna().any()
     if metric_name == "count":
         return float(len(frame))
-    if not has_actual and metric_name in {"mae", "rmse", "wape", "bias", "coverage"}:
+    if not has_actual and metric_name in _ACTUAL_METRICS:
         return None
     if metric_name == "mae":
         return float(frame["abs_error"].mean())
@@ -221,6 +238,17 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
         if denominator == 0:
             return None
         return float(frame["abs_error"].sum() / denominator)
+    if metric_name == "smape":
+        # Symmetric MAPE as a ratio in [0, 2] (consistent with wape, not a percentage).
+        actual = pd.to_numeric(frame["actual"], errors="coerce")
+        predicted = pd.to_numeric(frame["yhat"], errors="coerce")
+        denominator = actual.abs() + predicted.abs()
+        valid = actual.notna() & predicted.notna() & (denominator != 0)
+        if not bool(valid.any()):
+            return None
+        return float((2.0 * (predicted[valid] - actual[valid]).abs() / denominator[valid]).mean())
+    if metric_name == "pinball":
+        return _pinball_loss(frame)
     if metric_name == "bias":
         return float(frame["error"].mean())
     if metric_name == "coverage":
@@ -241,6 +269,33 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
         )
         return float(width.mean())
     return None
+
+
+def _pinball_loss(frame: pd.DataFrame) -> float | None:
+    """Mean pinball (quantile) loss averaged over every ``yhat_p<level>`` column.
+
+    Returns ``None`` when the forecast carries no quantile columns, so the metric is
+    simply skipped for point forecasts. Averaging the per-quantile pinball losses gives
+    a single proper score for probabilistic forecasts.
+    """
+    actual = pd.to_numeric(frame["actual"], errors="coerce")
+    losses: list[float] = []
+    for column in frame.columns:
+        match = _QUANTILE_COLUMN.fullmatch(str(column))
+        if match is None:
+            continue
+        quantile = int(match.group(1)) / 100.0
+        if not 0.0 < quantile < 1.0:
+            continue
+        predicted = pd.to_numeric(frame[column], errors="coerce")
+        valid = actual.notna() & predicted.notna()
+        if not bool(valid.any()):
+            continue
+        diff = actual[valid] - predicted[valid]
+        losses.append(float(np.maximum(quantile * diff, (quantile - 1.0) * diff).mean()))
+    if not losses:
+        return None
+    return float(np.mean(losses))
 
 
 def _normalize_actuals(actuals: pd.DataFrame, default_series_id: str = "default") -> pd.DataFrame:

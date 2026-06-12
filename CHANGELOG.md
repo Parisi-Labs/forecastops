@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `sMAPE` and `pinball` (quantile) loss metrics. sMAPE is a scale-free ratio
+  alongside WAPE; pinball loss is averaged over `yhat_p<level>` quantile
+  columns and is skipped for point forecasts.
+- Metrics are now sliced by any categorical columns preserved via a schema's
+  `extra_columns` (e.g. region, holiday_flag, event_type), in addition to
+  horizon buckets, so error-by-regime breakdowns appear automatically.
+
 ## 0.1.0 — 2026-06-11
 
 Initial public release.

@@ -82,7 +82,9 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 - `capture`: normalize forecasts from existing workflows.
 - `ForecastSchema`: map arbitrary dataframe columns to canonical semantics.
 - `validate`: catch schema, timestamp, duplicate, interval, and leakage issues.
-- `evaluate`: compute MAE, RMSE, WAPE, bias, coverage, interval width, and count.
+- `evaluate`: compute MAE, RMSE, WAPE, sMAPE, bias, coverage, interval width,
+  pinball loss (for quantile forecasts), and count — sliced by horizon and by
+  any categorical columns you keep (e.g. region, holiday_flag, event_type).
 - `compare`: calculate benchmark metrics and skill.
 - `diff`: compare two captured runs.
 - local store: `.forecastops/forecastops.duckdb` plus Parquet artifacts.
