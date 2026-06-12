@@ -1,6 +1,6 @@
 const state = {
   runs: [],
-  filters: { project: "", status: "", search: "" },
+  filters: { project: "", status: "", search: "", group: "" },
   sort: { key: "created_at", dir: "desc" },
   runTab: "metrics",
   detail: null, // { run, points, residuals, series, selectedSeries }
@@ -53,6 +53,8 @@ async function route() {
     await renderRunView(segments[1]);
   } else if (view === "projects") {
     renderProjectsView();
+  } else if (view === "groups") {
+    await renderGroupsView();
   } else if (view === "compare") {
     renderCompareView(params);
   } else {
@@ -85,11 +87,20 @@ async function refreshData() {
 function renderRunsView(params) {
   setCrumbs("Runs");
   if (params && params.has("project")) state.filters.project = params.get("project");
+  state.filters.group = params && params.has("group") ? params.get("group") : "";
   if (!state.runs.length) {
     $("#view").innerHTML = emptyStoreHtml();
     return;
   }
   const projects = [...new Set(state.runs.map((run) => run.project_id).filter(Boolean))].sort();
+  const groupRun = state.filters.group
+    ? state.runs.find((run) => run.group_id === state.filters.group)
+    : null;
+  const groupChip = state.filters.group
+    ? `<a class="filter-chip" href="#/runs" title="Clear group filter">group: ${escapeHtml(
+        (groupRun && groupRun.group_name) || state.filters.group
+      )} ✕</a>`
+    : "";
   $("#view").innerHTML = `
     <div class="toolbar">
       <select id="projectFilter" aria-label="Filter by project">
@@ -101,6 +112,7 @@ function renderRunsView(params) {
         ${["PASS", "WARN", "FAIL"].map((s) => `<option value="${s}" ${s === state.filters.status ? "selected" : ""}>${s[0]}${s.slice(1).toLowerCase()}</option>`).join("")}
       </select>
       <input id="searchFilter" type="search" placeholder="Search run, project, model, adapter" autocomplete="off" value="${escapeHtml(state.filters.search)}" aria-label="Search runs">
+      ${groupChip}
     </div>
     <div class="table-wrap runs-table-wrap">
       <table id="runsTable">
@@ -151,10 +163,11 @@ function renderRunsView(params) {
 }
 
 function filteredRuns() {
-  const { project, status, search } = state.filters;
+  const { project, status, search, group } = state.filters;
   const needle = search.toLowerCase();
   return state.runs.filter((run) => {
     if (project && run.project_id !== project) return false;
+    if (group && run.group_id !== group) return false;
     if (status && run.validation_status !== status) return false;
     if (needle) {
       const haystack = [run.run_id, run.project_id, run.model_name, run.model_version, run.adapter_name]
@@ -473,6 +486,68 @@ function renderProjectsView() {
       </table>
     </div>
     <p class="grid-note">MAE trend is oldest → newest capture. Click a project to see its runs.</p>
+  `;
+  attachRowLinks($("#view"));
+}
+
+/* ---------- Groups ---------- */
+
+async function renderGroupsView() {
+  setCrumbs("Groups");
+  let groups = [];
+  try {
+    groups = await api("/api/groups");
+  } catch {
+    groups = [];
+  }
+  if (!groups.length) {
+    $("#view").innerHTML = `
+      <div class="empty-state">
+        <h2>No experiment groups yet</h2>
+        <p>Group related runs by passing <code>group=</code> to capture, or run a backtest:</p>
+        <pre>import forecastops as fops
+
+# tag a sweep of variants
+fops.capture(forecast, project="demand", group="model-sweep", ...)
+
+# or evaluate a rolling-origin panel as one grouped backtest
+result = fops.backtest(panel, group="weekly-rolling", actuals=actuals, ...)</pre>
+        <p class="hint">A backtest creates one run per origin, all under a single group.</p>
+      </div>`;
+    return;
+  }
+  $("#topMeta").textContent = `${groups.length} group${groups.length === 1 ? "" : "s"}`;
+  $("#view").innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>Kind</th>
+            <th>Project</th>
+            <th class="num">Runs</th>
+            <th>Last run</th>
+            <th class="num">Mean MAE</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groups
+            .map(
+              (group) => `
+            <tr data-href="#/runs?group=${encodeURIComponent(group.group_id)}">
+              <td><span class="link">${escapeHtml(group.name || group.group_id)}</span></td>
+              <td>${escapeHtml(group.kind || "–")}</td>
+              <td>${escapeHtml(group.project_id || "–")}</td>
+              <td class="num">${fmt(group.run_count, 0)}</td>
+              <td>${escapeHtml(formatDate(group.last_run_at))}</td>
+              <td class="num">${fmt(group.mean_mae)}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="grid-note">Mean MAE is averaged across the group's runs. Click a group to see its runs.</p>
   `;
   attachRowLinks($("#view"));
 }

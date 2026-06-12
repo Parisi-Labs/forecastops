@@ -224,6 +224,24 @@ main {
   max-width: 320px;
 }
 
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+
+.filter-chip:hover {
+  color: var(--ink);
+  border-color: var(--faint);
+}
+
 /* Tables */
 
 .table-wrap {
