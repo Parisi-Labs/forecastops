@@ -22,6 +22,13 @@ def make_run_id(project: str, model_name: str | None = None) -> str:
     return f"{safe_project or 'default'}-{safe_model or 'forecast'}-{stamp}-{suffix}"
 
 
+def make_group_id(project: str, group: str) -> str:
+    """Deterministic group id so repeated captures with the same group name join one group."""
+    safe_project = "".join(ch if ch.isalnum() else "-" for ch in project.lower()).strip("-")
+    safe_group = "".join(ch if ch.isalnum() else "-" for ch in group.lower()).strip("-")
+    return f"{safe_project or 'default'}::{safe_group or 'group'}"
+
+
 @dataclass(slots=True)
 class CaptureContext:
     project: str

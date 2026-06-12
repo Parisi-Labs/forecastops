@@ -1,5 +1,6 @@
 """ForecastOps public API."""
 
+from forecastops.core.backtest import backtest
 from forecastops.core.capture import capture
 from forecastops.core.compare import compare
 from forecastops.core.diff import diff
@@ -11,6 +12,7 @@ from forecastops.ui.server import ui
 
 __all__ = [
     "ForecastSchema",
+    "backtest",
     "capture",
     "compare",
     "diff",
