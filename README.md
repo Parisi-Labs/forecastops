@@ -1,5 +1,10 @@
 # ForecastOps
 
+[![PyPI](https://img.shields.io/pypi/v/forecastops)](https://pypi.org/project/forecastops/)
+[![Python](https://img.shields.io/pypi/pyversions/forecastops)](https://pypi.org/project/forecastops/)
+[![CI](https://github.com/Parisi-Labs/forecastops/actions/workflows/ci.yml/badge.svg)](https://github.com/Parisi-Labs/forecastops/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 ForecastOps is a local-first observability and evaluation layer for
 production forecasts. It works with the forecasting code you already have.
 
@@ -29,6 +34,8 @@ serves a read-only local UI. It does not train forecasting models, require a
 cloud account, or upload raw forecast data.
 
 ## Install
+
+From [PyPI](https://pypi.org/project/forecastops/):
 
 ```bash
 pip install forecastops
