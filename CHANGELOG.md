@@ -15,6 +15,10 @@
 - `fops.backtest(...)`: evaluate a rolling-origin forecast panel as one
   grouped backtest, returning per-cutoff and aggregate (mean/std) metrics.
   Existing stores are migrated in place to add the group columns.
+- Diagnostics cockpit on the run detail page: residual histogram, error by
+  horizon, per-series worst offenders, and per-regime MAE breakdowns.
+- Group detail page showing per-metric mean ± std and stability across a
+  group's runs (e.g. a backtest across windows).
 
 ## 0.1.0 — 2026-06-11
 

@@ -242,6 +242,73 @@ main {
   border-color: var(--faint);
 }
 
+/* Diagnostics cockpit */
+
+.diag-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.diag-panel {
+  margin-bottom: 12px;
+}
+
+.diag-panel .panel-title {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.diag-chart {
+  width: 100%;
+}
+
+.diag-chart svg {
+  display: block;
+  width: 100%;
+}
+
+.regime-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) 1fr 130px;
+  gap: 10px;
+  align-items: center;
+  padding: 3px 0;
+  font: 11px var(--mono);
+}
+
+.regime-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.regime-bar-wrap {
+  background: var(--bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.regime-bar {
+  display: block;
+  height: 10px;
+  min-width: 2px;
+  background: var(--accent);
+}
+
+.regime-val {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .diag-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Tables */
 
 .table-wrap {

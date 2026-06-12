@@ -71,11 +71,12 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 - **Runs** — every captured run with horizon, points, MAE, WAPE, bias,
   coverage, skill, and validation status; filterable and sortable.
 - **Run detail** — headline metrics, a forecast inspector with one chart per
-  series (forecast vs. actual vs. benchmark with interval bands), metrics,
-  validation events, residuals, artifacts, and the capture trace timeline.
+  series, and a diagnostics cockpit: residual distribution, error by horizon,
+  per-series worst offenders, and per-regime breakdowns — plus metrics,
+  validation, residuals, artifacts, and the capture trace timeline.
 - **Projects** — runs grouped by project with error trends across captures.
 - **Groups** — experiment and backtest groups with run counts and mean error;
-  click through to the grouped runs.
+  open a group to see per-metric mean ± std and stability across its runs.
 - **Compare** — metric deltas and regressions between any two runs, backed
   by `fops diff`.
 

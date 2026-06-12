@@ -2,7 +2,7 @@ const state = {
   runs: [],
   filters: { project: "", status: "", search: "", group: "" },
   sort: { key: "created_at", dir: "desc" },
-  runTab: "metrics",
+  runTab: "diagnostics",
   detail: null, // { run, points, residuals, series, selectedSeries }
 };
 
@@ -53,6 +53,8 @@ async function route() {
     await renderRunView(segments[1]);
   } else if (view === "projects") {
     renderProjectsView();
+  } else if (view === "groups" && segments[1]) {
+    renderGroupDetailView(segments[1]);
   } else if (view === "groups") {
     await renderGroupsView();
   } else if (view === "compare") {
@@ -326,6 +328,7 @@ async function renderRunView(runId) {
           <div id="gridNote" class="grid-note" hidden></div>
         </div>
         <div class="tabs">
+          ${tabButton("diagnostics", "Diagnostics")}
           ${tabButton("metrics", `Metrics (${(run.metrics || []).length})`)}
           ${tabButton("validation", `Validation (${(run.validation || []).length})`)}
           ${tabButton("residuals", "Residuals")}
@@ -406,12 +409,15 @@ async function changeSeries(seriesId) {
 
 function renderRunTab() {
   const { run, residuals } = state.detail;
-  if (!["metrics", "validation", "residuals", "artifacts"].includes(state.runTab)) state.runTab = "metrics";
+  const tabs = ["diagnostics", "metrics", "validation", "residuals", "artifacts"];
+  if (!tabs.includes(state.runTab)) state.runTab = "diagnostics";
   document.querySelectorAll(".tabs button").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === state.runTab);
   });
   const target = $("#tabContent");
-  if (state.runTab === "metrics") {
+  if (state.runTab === "diagnostics") {
+    renderDiagnostics(target);
+  } else if (state.runTab === "metrics") {
     target.innerHTML = table(run.metrics || [], "No metrics computed for this run. Pass actuals to fops.capture() to enable evaluation.");
   } else if (state.runTab === "validation") {
     target.innerHTML = table(run.validation || [], "No validation issues. The captured forecast passed all checks.");
@@ -420,6 +426,168 @@ function renderRunTab() {
   } else if (state.runTab === "artifacts") {
     target.innerHTML = table(run.artifacts || [], "No artifacts recorded.");
   }
+}
+
+/* ---------- Diagnostics (research cockpit) ---------- */
+
+const HORIZON_ORDER = ["0-1h", "1-6h", "6-24h", "24-48h", "48h-7d", "7d+", "unknown"];
+
+function renderDiagnostics(target) {
+  const { run, residuals, points } = state.detail;
+  const hasActual = points.some((p) => p.actual !== null && p.actual !== undefined);
+  if (!hasActual) {
+    target.innerHTML = `<p class="empty-state">Diagnostics need actuals. Pass <code>actuals=</code> to fops.capture() to unlock residual, horizon, and per-series breakdowns.</p>`;
+    return;
+  }
+  target.innerHTML = `
+    <div class="diag-grid">
+      <div class="panel diag-panel">
+        <div class="panel-title">Residual distribution</div>
+        <div id="diagResiduals" class="diag-chart"></div>
+      </div>
+      <div class="panel diag-panel">
+        <div class="panel-title">Error by horizon</div>
+        <div id="diagHorizon" class="diag-chart"></div>
+      </div>
+    </div>
+    <div class="panel diag-panel">
+      <div class="panel-title">Per-series worst offenders</div>
+      <div id="diagOffenders"></div>
+    </div>
+    <div id="diagRegimeWrap"></div>
+  `;
+  drawResidualHistogram($("#diagResiduals"), residuals || []);
+  drawHorizonBars($("#diagHorizon"), run.metrics || []);
+  $("#diagOffenders").innerHTML = worstOffendersTable(points);
+  renderRegimeBreakdown($("#diagRegimeWrap"), run.metrics || []);
+}
+
+function drawResidualHistogram(el, residuals) {
+  const values = residuals
+    .map((r) => Number(r.residual))
+    .filter((v) => Number.isFinite(v));
+  if (values.length < 2) {
+    el.innerHTML = `<p class="hint">Not enough residuals to chart.</p>`;
+    return;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const binCount = Math.min(24, Math.max(6, Math.round(Math.sqrt(values.length))));
+  const bins = new Array(binCount).fill(0);
+  values.forEach((v) => {
+    const idx = Math.min(binCount - 1, Math.floor(((v - min) / span) * binCount));
+    bins[idx] += 1;
+  });
+  const width = el.clientWidth || 360;
+  const height = 200;
+  const pad = { top: 8, right: 8, bottom: 22, left: 30 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const maxCount = Math.max(...bins);
+  const barW = innerW / binCount;
+  const zeroX = pad.left + ((0 - min) / span) * innerW;
+  const bars = bins
+    .map((count, i) => {
+      const h = (count / maxCount) * innerH;
+      const x = pad.left + i * barW;
+      const y = pad.top + innerH - h;
+      return `<rect x="${(x + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5, barW - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${COLORS.forecast}" opacity="0.85"></rect>`;
+    })
+    .join("");
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const meanX = pad.left + ((mean - min) / span) * innerW;
+  el.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Residual histogram">
+      ${bars}
+      ${0 >= min && 0 <= max ? `<line x1="${zeroX.toFixed(1)}" y1="${pad.top}" x2="${zeroX.toFixed(1)}" y2="${pad.top + innerH}" stroke="${COLORS.tick}" stroke-dasharray="3 3"></line>` : ""}
+      <line x1="${meanX.toFixed(1)}" y1="${pad.top}" x2="${meanX.toFixed(1)}" y2="${pad.top + innerH}" stroke="${COLORS.actual}" stroke-width="1.5"></line>
+      <text x="${pad.left}" y="${height - 6}" font-size="9" fill="${COLORS.tick}" font-family="monospace">${escapeHtml(fmtTick(min))}</text>
+      <text x="${width - pad.right}" y="${height - 6}" text-anchor="end" font-size="9" fill="${COLORS.tick}" font-family="monospace">${escapeHtml(fmtTick(max))}</text>
+    </svg>
+    <div class="legend"><span class="l-actual"><i></i>mean ${fmt(mean)}</span><span class="hint">residual = forecast − actual · n=${values.length}</span></div>
+  `;
+}
+
+function drawHorizonBars(el, metrics) {
+  const rows = metrics
+    .filter((m) => m.slice_name === "horizon_bucket" && m.metric_name === "mae" && m.benchmark_name === null)
+    .map((m) => ({ label: m.slice_value, value: m.metric_value, n: m.points_count }))
+    .sort((a, b) => HORIZON_ORDER.indexOf(a.label) - HORIZON_ORDER.indexOf(b.label));
+  if (!rows.length) {
+    el.innerHTML = `<p class="hint">No horizon-sliced metrics for this run.</p>`;
+    return;
+  }
+  el.innerHTML = horizontalBars(rows) + `<div class="legend"><span class="hint">MAE per horizon bucket</span></div>`;
+}
+
+function horizontalBars(rows) {
+  const maxV = Math.max(...rows.map((r) => r.value)) || 1;
+  return rows
+    .map(
+      (r) => `<div class="regime-row">
+        <span class="regime-label" title="${escapeHtml(r.label)}">${escapeHtml(r.label)}</span>
+        <span class="regime-bar-wrap"><span class="regime-bar" style="width:${((r.value / maxV) * 100).toFixed(1)}%"></span></span>
+        <span class="regime-val">${fmt(r.value)} <span class="hint">n=${r.n}</span></span>
+      </div>`
+    )
+    .join("");
+}
+
+function worstOffendersTable(points) {
+  const groups = new Map();
+  points.forEach((p) => {
+    if (p.actual === null || p.actual === undefined || p.yhat === null || p.yhat === undefined) return;
+    const key = String(p.series_id ?? "");
+    if (!groups.has(key)) groups.set(key, { absErr: 0, absActual: 0, n: 0 });
+    const g = groups.get(key);
+    g.absErr += Math.abs(Number(p.yhat) - Number(p.actual));
+    g.absActual += Math.abs(Number(p.actual));
+    g.n += 1;
+  });
+  const rows = [...groups.entries()]
+    .map(([series, g]) => ({
+      series,
+      wape: g.absActual > 0 ? g.absErr / g.absActual : null,
+      mae: g.n > 0 ? g.absErr / g.n : null,
+      n: g.n,
+    }))
+    .filter((r) => r.wape !== null)
+    .sort((a, b) => b.wape - a.wape)
+    .slice(0, 10);
+  if (!rows.length) return `<p class="hint">No scored series.</p>`;
+  const body = rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.series || "—")}</td>
+        <td class="num">${fmt(r.wape)}</td>
+        <td class="num">${fmt(r.mae)}</td>
+        <td class="num">${fmt(r.n, 0)}</td>
+      </tr>`
+    )
+    .join("");
+  return `<div class="table-wrap"><table><thead><tr><th>Series</th><th class="num">WAPE</th><th class="num">MAE</th><th class="num">Points</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function renderRegimeBreakdown(wrap, metrics) {
+  const regimeSlices = [...new Set(
+    metrics
+      .filter((m) => m.slice_name && m.slice_name !== "horizon_bucket" && m.slice_name !== "series_group")
+      .map((m) => m.slice_name)
+  )];
+  if (!regimeSlices.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = regimeSlices
+    .map((sliceName) => {
+      const rows = metrics
+        .filter((m) => m.slice_name === sliceName && m.metric_name === "mae" && m.benchmark_name === null)
+        .map((m) => ({ label: m.slice_value, value: m.metric_value, n: m.points_count }))
+        .sort((a, b) => b.value - a.value);
+      return `<div class="panel diag-panel"><div class="panel-title">MAE by ${escapeHtml(sliceName)}</div>${horizontalBars(rows)}</div>`;
+    })
+    .join("");
 }
 
 /* ---------- Projects ---------- */
@@ -534,7 +702,7 @@ result = fops.backtest(panel, group="weekly-rolling", actuals=actuals, ...)</pre
           ${groups
             .map(
               (group) => `
-            <tr data-href="#/runs?group=${encodeURIComponent(group.group_id)}">
+            <tr data-href="#/groups/${encodeURIComponent(group.group_id)}">
               <td><span class="link">${escapeHtml(group.name || group.group_id)}</span></td>
               <td>${escapeHtml(group.kind || "–")}</td>
               <td>${escapeHtml(group.project_id || "–")}</td>
@@ -548,6 +716,65 @@ result = fops.backtest(panel, group="weekly-rolling", actuals=actuals, ...)</pre
       </table>
     </div>
     <p class="grid-note">Mean MAE is averaged across the group's runs. Click a group to see its runs.</p>
+  `;
+  attachRowLinks($("#view"));
+}
+
+function renderGroupDetailView(groupId) {
+  const runs = state.runs
+    .filter((run) => run.group_id === groupId)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  setCrumbs(`<a href="#/groups">Groups</a> <span>/ ${escapeHtml((runs[0] && runs[0].group_name) || groupId)}</span>`);
+  if (!runs.length) {
+    $("#view").innerHTML = `<div class="empty-state"><h2>Group not found</h2><p><a href="#/groups">Back to groups</a></p></div>`;
+    return;
+  }
+  const name = (runs[0] && runs[0].group_name) || groupId;
+  $("#topMeta").textContent = `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+  const metricCards = ["mae", "wape", "bias", "coverage"]
+    .map((key) => {
+      const values = runs.map((run) => run[key]).filter((v) => v !== null && v !== undefined);
+      if (!values.length) return "";
+      const mean = values.reduce((a, b) => a + Number(b), 0) / values.length;
+      const std = Math.sqrt(values.reduce((a, b) => a + (Number(b) - mean) ** 2, 0) / values.length);
+      return `<div class="metric-card neutral">
+        <span>${key.toUpperCase()} mean ± std</span>
+        <strong>${fmt(mean)}</strong>
+        <small>± ${fmt(std)} · ${sparkline(values)}</small>
+      </div>`;
+    })
+    .join("");
+  $("#view").innerHTML = `
+    <a class="back-link" href="#/groups">← Groups</a>
+    <div class="detail-head">
+      <h2>${escapeHtml(name)}</h2>
+      <span class="run-id">${escapeHtml(groupId)}</span>
+      <span class="meta"><a href="#/runs?group=${encodeURIComponent(groupId)}">View as runs →</a></span>
+    </div>
+    <div class="summary-grid">${metricCards || '<p class="hint">No metrics across this group yet.</p>'}</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Run</th><th>Created</th><th class="num">MAE</th><th class="num">WAPE</th><th class="num">Bias</th><th class="num">Coverage</th><th>Validation</th></tr>
+        </thead>
+        <tbody>
+          ${runs
+            .map(
+              (run) => `<tr data-href="#/runs/${encodeURIComponent(run.run_id)}">
+                <td><span class="link">${escapeHtml(run.run_name || shortRun(run.run_id))}</span></td>
+                <td>${escapeHtml(formatDate(run.created_at))}</td>
+                <td class="num">${fmt(run.mae)}</td>
+                <td class="num">${fmt(run.wape)}</td>
+                <td class="num">${fmt(run.bias)}</td>
+                <td class="num">${fmt(run.coverage)}</td>
+                <td><span class="status ${escapeHtml(run.validation_status || "")}">${escapeHtml(run.validation_status || "–")}</span></td>
+              </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="grid-note">Runs ordered oldest → newest. Sparklines in the cards show each metric across the group's runs.</p>
   `;
   attachRowLinks($("#view"));
 }
