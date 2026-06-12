@@ -34,6 +34,10 @@ def create_app(*, store: str | Path | None = None) -> FastAPI:
     def projects() -> list[dict[str, Any]]:
         return queries.projects()
 
+    @app.get("/api/groups")
+    def groups() -> list[dict[str, Any]]:
+        return queries.groups()
+
     @app.get("/api/runs")
     def runs() -> list[dict[str, Any]]:
         return queries.runs()

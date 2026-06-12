@@ -15,7 +15,7 @@ from forecastops.core.evaluate import (
     evaluate,
     resolve_default_series_id,
 )
-from forecastops.core.run import CaptureContext, ForecastRun, make_run_id, utc_now
+from forecastops.core.run import CaptureContext, ForecastRun, make_group_id, make_run_id, utc_now
 from forecastops.core.schema import ForecastSchema
 from forecastops.core.validate import validate_forecast, validation_status
 from forecastops.otel import semconv
@@ -47,6 +47,8 @@ def capture(
     run_id: str | None = None,
     run_name: str | None = None,
     run_kind: str = "forecast",
+    group: str | None = None,
+    group_kind: str = "experiment",
     store: str | Path | None = None,
     allow_insample: bool | None = None,
     strict: bool = False,
@@ -208,7 +210,15 @@ def capture(
             "ended_at": utc_now(),
         }
     )
+    if group:
+        group_id = make_group_id(project, group)
+        summary["group_id"] = group_id
+        summary["group_name"] = group
     index.upsert_project(project, metadata)
+    if group:
+        index.upsert_group(
+            group_id=summary["group_id"], project=project, name=group, kind=group_kind
+        )
     index.insert_artifacts(artifacts)
     index.insert_validation_events(run_id, events)
     index.insert_metrics(metric_records)

@@ -67,6 +67,35 @@ class UIQueries:
         """
         return _records(self._query(query))
 
+    def groups(self) -> list[dict[str, Any]]:
+        query = """
+        with group_runs as (
+          select
+            g.group_id, g.name, g.kind, g.project_id, g.created_at,
+            count(r.run_id) as run_count,
+            max(r.created_at) as last_run_at
+          from run_groups g
+          left join runs r on r.group_id = g.group_id
+          group by g.group_id, g.name, g.kind, g.project_id, g.created_at
+        ),
+        group_mae as (
+          select r.group_id, avg(m.metric_value) as mean_mae
+          from runs r
+          join evaluation_metrics m
+            on m.run_id = r.run_id
+           and m.metric_name = 'mae'
+           and m.slice_name is null
+           and m.benchmark_name is null
+          where r.group_id is not null
+          group by r.group_id
+        )
+        select gr.*, gm.mean_mae
+        from group_runs gr
+        left join group_mae gm on gm.group_id = gr.group_id
+        order by gr.last_run_at desc nulls last
+        """
+        return _records(self._query(query))
+
     def run(self, run_id: str) -> dict[str, Any] | None:
         rows = _records(self._query("select * from runs where run_id = ?", run_id))
         if not rows:

@@ -66,6 +66,29 @@ class DuckDBIndex:
                 [project, project, utc_now(), _json(metadata or {})],
             )
 
+    def upsert_group(
+        self,
+        *,
+        group_id: str,
+        project: str,
+        name: str,
+        kind: str = "experiment",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.init()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                insert into run_groups (group_id, project_id, name, kind, created_at, metadata_json)
+                values (?, ?, ?, ?, ?, ?)
+                on conflict (group_id) do update set
+                  name = excluded.name,
+                  kind = excluded.kind,
+                  metadata_json = excluded.metadata_json
+                """,
+                [group_id, project, name, kind, utc_now(), _json(metadata or {})],
+            )
+
     def insert_run(
         self,
         *,
@@ -77,18 +100,20 @@ class DuckDBIndex:
             conn.execute(
                 """
                 insert or replace into runs (
-                  run_id, project_id, run_name, run_kind, status, created_at,
-                  started_at, ended_at, model_name, model_version, adapter_name,
+                  run_id, project_id, group_id, group_name, run_name, run_kind, status,
+                  created_at, started_at, ended_at, model_name, model_version, adapter_name,
                   cutoff_start, cutoff_end, target_start, target_end, horizon_min,
                   horizon_max, series_count, points_count, forecast_artifact_uri,
                   actuals_artifact_uri, benchmark_artifact_uri, report_uri, trace_id,
                   metadata_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     run.run_id,
                     run.project,
+                    summary.get("group_id"),
+                    summary.get("group_name"),
                     summary.get("run_name"),
                     summary.get("run_kind", "forecast"),
                     run.status,
@@ -292,6 +317,8 @@ SCHEMA_STATEMENTS = [
     create table if not exists runs (
       run_id varchar primary key,
       project_id varchar not null,
+      group_id varchar,
+      group_name varchar,
       run_name varchar,
       run_kind varchar,
       status varchar,
@@ -373,4 +400,17 @@ SCHEMA_STATEMENTS = [
       attributes_json json
     )
     """,
+    """
+    create table if not exists run_groups (
+      group_id varchar primary key,
+      project_id varchar,
+      name varchar not null,
+      kind varchar,
+      created_at timestamp not null,
+      metadata_json json
+    )
+    """,
+    # Migrate stores created before run groups existed (no-op once the columns exist).
+    "alter table runs add column if not exists group_id varchar",
+    "alter table runs add column if not exists group_name varchar",
 ]

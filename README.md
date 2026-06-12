@@ -74,6 +74,8 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
   series (forecast vs. actual vs. benchmark with interval bands), metrics,
   validation events, residuals, artifacts, and the capture trace timeline.
 - **Projects** — runs grouped by project with error trends across captures.
+- **Groups** — experiment and backtest groups with run counts and mean error;
+  click through to the grouped runs.
 - **Compare** — metric deltas and regressions between any two runs, backed
   by `fops diff`.
 
@@ -86,7 +88,11 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
   pinball loss (for quantile forecasts), and count — sliced by horizon and by
   any categorical columns you keep (e.g. region, holiday_flag, event_type).
 - `compare`: calculate benchmark metrics and skill.
+- `backtest`: evaluate a rolling-origin forecast panel as one grouped run set,
+  with per-cutoff and aggregate (mean/std) metrics.
 - `diff`: compare two captured runs.
+- groups: tag related runs with `capture(group=...)` (or a `backtest`) and
+  browse them together in the UI.
 - local store: `.forecastops/forecastops.duckdb` plus Parquet artifacts.
 - UI: local read-only browser explorer for runs, metrics, residuals, validation,
   artifacts, and run differences.
