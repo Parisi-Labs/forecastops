@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import pandas as pd
 
 from forecastops.store.duckdb_index import DuckDBIndex, ensure_store
 
@@ -29,6 +30,7 @@ def diagnose(
     run = index.run_by_id(run_id)
     if run is None:
         raise ValueError(f"Run {run_id!r} not found in store {index.store.root}")
+    run = {key: _null_safe(value) for key, value in run.items()}
 
     metrics = _query(
         index,
@@ -169,7 +171,20 @@ def _validation_summary(validation: list[dict[str, Any]]) -> dict[str, Any]:
 def _query(index: DuckDBIndex, sql: str, *params: Any) -> list[dict[str, Any]]:
     with index.connect(read_only=True) as conn:
         frame = conn.execute(sql, list(params)).fetchdf()
-    return frame.to_dict(orient="records") if not frame.empty else []
+    if frame.empty:
+        return []
+    # DuckDB NULLs surface as NaN/NaT/NA in pandas under some versions; normalize to None
+    # so downstream `is None` checks behave identically across dependency versions.
+    return [{key: _null_safe(value) for key, value in record.items()} for record in frame.to_dict(orient="records")]
+
+
+def _null_safe(value: Any) -> Any:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        return value
+    return value
 
 
 def _iso(value: Any) -> Any:
