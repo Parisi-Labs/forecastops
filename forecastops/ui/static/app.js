@@ -53,6 +53,8 @@ async function route() {
     await renderRunView(segments[1]);
   } else if (view === "projects") {
     renderProjectsView();
+  } else if (view === "groups" && segments[1]) {
+    renderGroupDetailView(segments[1]);
   } else if (view === "groups") {
     await renderGroupsView();
   } else if (view === "compare") {
@@ -700,7 +702,7 @@ result = fops.backtest(panel, group="weekly-rolling", actuals=actuals, ...)</pre
           ${groups
             .map(
               (group) => `
-            <tr data-href="#/runs?group=${encodeURIComponent(group.group_id)}">
+            <tr data-href="#/groups/${encodeURIComponent(group.group_id)}">
               <td><span class="link">${escapeHtml(group.name || group.group_id)}</span></td>
               <td>${escapeHtml(group.kind || "–")}</td>
               <td>${escapeHtml(group.project_id || "–")}</td>
@@ -714,6 +716,65 @@ result = fops.backtest(panel, group="weekly-rolling", actuals=actuals, ...)</pre
       </table>
     </div>
     <p class="grid-note">Mean MAE is averaged across the group's runs. Click a group to see its runs.</p>
+  `;
+  attachRowLinks($("#view"));
+}
+
+function renderGroupDetailView(groupId) {
+  const runs = state.runs
+    .filter((run) => run.group_id === groupId)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  setCrumbs(`<a href="#/groups">Groups</a> <span>/ ${escapeHtml((runs[0] && runs[0].group_name) || groupId)}</span>`);
+  if (!runs.length) {
+    $("#view").innerHTML = `<div class="empty-state"><h2>Group not found</h2><p><a href="#/groups">Back to groups</a></p></div>`;
+    return;
+  }
+  const name = (runs[0] && runs[0].group_name) || groupId;
+  $("#topMeta").textContent = `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+  const metricCards = ["mae", "wape", "bias", "coverage"]
+    .map((key) => {
+      const values = runs.map((run) => run[key]).filter((v) => v !== null && v !== undefined);
+      if (!values.length) return "";
+      const mean = values.reduce((a, b) => a + Number(b), 0) / values.length;
+      const std = Math.sqrt(values.reduce((a, b) => a + (Number(b) - mean) ** 2, 0) / values.length);
+      return `<div class="metric-card neutral">
+        <span>${key.toUpperCase()} mean ± std</span>
+        <strong>${fmt(mean)}</strong>
+        <small>± ${fmt(std)} · ${sparkline(values)}</small>
+      </div>`;
+    })
+    .join("");
+  $("#view").innerHTML = `
+    <a class="back-link" href="#/groups">← Groups</a>
+    <div class="detail-head">
+      <h2>${escapeHtml(name)}</h2>
+      <span class="run-id">${escapeHtml(groupId)}</span>
+      <span class="meta"><a href="#/runs?group=${encodeURIComponent(groupId)}">View as runs →</a></span>
+    </div>
+    <div class="summary-grid">${metricCards || '<p class="hint">No metrics across this group yet.</p>'}</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Run</th><th>Created</th><th class="num">MAE</th><th class="num">WAPE</th><th class="num">Bias</th><th class="num">Coverage</th><th>Validation</th></tr>
+        </thead>
+        <tbody>
+          ${runs
+            .map(
+              (run) => `<tr data-href="#/runs/${encodeURIComponent(run.run_id)}">
+                <td><span class="link">${escapeHtml(run.run_name || shortRun(run.run_id))}</span></td>
+                <td>${escapeHtml(formatDate(run.created_at))}</td>
+                <td class="num">${fmt(run.mae)}</td>
+                <td class="num">${fmt(run.wape)}</td>
+                <td class="num">${fmt(run.bias)}</td>
+                <td class="num">${fmt(run.coverage)}</td>
+                <td><span class="status ${escapeHtml(run.validation_status || "")}">${escapeHtml(run.validation_status || "–")}</span></td>
+              </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="grid-note">Runs ordered oldest → newest. Sparklines in the cards show each metric across the group's runs.</p>
   `;
   attachRowLinks($("#view"));
 }
