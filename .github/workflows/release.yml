@@ -8,9 +8,15 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Publish via PyPI Trusted Publishing (OIDC) — no long-lived token.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/forecastops
+    permissions:
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip build
@@ -21,5 +27,4 @@ jobs:
       - run: python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true

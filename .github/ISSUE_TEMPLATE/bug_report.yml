@@ -1,0 +1,48 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For security issues, please use the
+        [Security tab](https://github.com/Parisi-Labs/forecastops/security/advisories/new)
+        instead of a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong?
+      placeholder: A clear description of the bug, including any traceback.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: A minimal snippet or steps that reproduce the issue.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ForecastOps version
+      description: "Output of `pip show forecastops` (or `fops --version`)."
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Adapter used, dataframe shape, OS, or other relevant context.
+    validations:
+      required: false
