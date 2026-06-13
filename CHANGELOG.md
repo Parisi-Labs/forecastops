@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 — 2026-06-12
+
 ### Added
 
 - `fops.diagnose(run_id)` (and `fops diagnose <run_id>`): a compact,
