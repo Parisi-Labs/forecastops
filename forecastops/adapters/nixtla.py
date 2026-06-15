@@ -102,7 +102,7 @@ class NixtlaAdapter(ForecastAdapter):
             warnings.warn(
                 "Nixtla adapter skipped interval level(s) "
                 f"{levels} because their bounds do not map to integer percentile "
-                "quantile columns. Coverage and interval width still use available bounds, "
+                "quantile columns. Coverage and interval width use the widest complete interval bounds when available, "
                 "but pinball loss will not include the skipped level(s). Use levels with "
                 "integer lower/upper percentiles, such as 80 or 90, to emit quantile columns.",
                 UserWarning,
