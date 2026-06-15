@@ -7,7 +7,12 @@ import numpy as np
 import pandas as pd
 
 from forecastops.core.run import CaptureContext, NormalizedForecast
-from forecastops.core.schema import QUANTILE_COLUMN_PATTERN, ForecastSchema, quantile_column_name
+from forecastops.core.schema import (
+    QUANTILE_COLUMN_PATTERN,
+    QUANTILE_LIKE_COLUMN_PATTERN,
+    ForecastSchema,
+    quantile_column_name,
+)
 
 
 def normalize_dataframe(
@@ -22,6 +27,18 @@ def normalize_dataframe(
 
     mapping = schema or context.schema
     df = obj.copy()
+    invalid_quantile_columns = [
+        str(column)
+        for column in df.columns
+        if QUANTILE_LIKE_COLUMN_PATTERN.fullmatch(str(column))
+        and not QUANTILE_COLUMN_PATTERN.fullmatch(str(column))
+    ]
+    if invalid_quantile_columns:
+        columns = ", ".join(repr(column) for column in invalid_quantile_columns)
+        raise ValueError(
+            f"Invalid quantile column(s) {columns}; use canonical zero-padded names "
+            "from yhat_p01 through yhat_p99"
+        )
     out = pd.DataFrame(index=df.index)
 
     run_id = context.run_id
@@ -93,7 +110,8 @@ def normalize_dataframe(
             if source in df and target not in out:
                 _copy_if_present(df, out, source, target, numeric=numeric)
         for column in df.columns:
-            if QUANTILE_COLUMN_PATTERN.fullmatch(column):
+            column_name = str(column)
+            if QUANTILE_COLUMN_PATTERN.fullmatch(column_name):
                 out[column] = pd.to_numeric(df[column], errors="coerce")
 
     for column in _safe_extra_columns(df, mapping):

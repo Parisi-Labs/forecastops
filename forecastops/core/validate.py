@@ -7,7 +7,11 @@ import numpy as np
 import pandas as pd
 
 from forecastops.core.run import ValidationEvent
-from forecastops.core.schema import CANONICAL_REQUIRED_COLUMNS, QUANTILE_COLUMN_PATTERN
+from forecastops.core.schema import (
+    CANONICAL_REQUIRED_COLUMNS,
+    QUANTILE_COLUMN_PATTERN,
+    QUANTILE_LIKE_COLUMN_PATTERN,
+)
 
 
 def validate_forecast(
@@ -218,18 +222,35 @@ def _interval_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
 
 
 def _quantile_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
+    events: list[ValidationEvent] = []
+    invalid_columns = [
+        str(column)
+        for column in frame.columns
+        if QUANTILE_LIKE_COLUMN_PATTERN.fullmatch(str(column))
+        and not QUANTILE_COLUMN_PATTERN.fullmatch(str(column))
+    ]
+    if invalid_columns:
+        events.append(
+            ValidationEvent(
+                "ERROR",
+                "invalid_quantile_columns",
+                "Quantile forecast columns must use canonical names from yhat_p01 through yhat_p99",
+                affected_count=len(invalid_columns),
+                sample={"columns": invalid_columns[:5]},
+            )
+        )
     quantile_columns = sorted(
         [column for column in frame.columns if QUANTILE_COLUMN_PATTERN.fullmatch(column)],
         key=lambda column: int(column.replace("yhat_p", "")),
     )
     if len(quantile_columns) < 2:
-        return []
+        return events
     numeric = frame[quantile_columns].apply(pd.to_numeric, errors="coerce")
     monotonic = numeric.diff(axis=1).iloc[:, 1:] >= 0
     invalid = monotonic.notna().all(axis=1) & ~monotonic.all(axis=1)
     if not bool(invalid.any()):
-        return []
-    return [
+        return events
+    events.append(
         ValidationEvent(
             "ERROR",
             "quantiles_not_monotonic",
@@ -237,7 +258,8 @@ def _quantile_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
             affected_count=int(invalid.sum()),
             sample=_sample_rows(frame[invalid]),
         )
-    ]
+    )
+    return events
 
 
 def _actuals_checks(frame: pd.DataFrame) -> list[ValidationEvent]:
@@ -331,4 +353,3 @@ def _json_safe(value: Any) -> Any:
     if pd.isna(value):
         return None
     return value
-

@@ -163,6 +163,33 @@ def test_validate_ignores_non_quantile_yhat_p_columns() -> None:
     assert not any(event.code == "quantiles_not_monotonic" for event in events)
 
 
+def test_validate_rejects_noncanonical_quantile_columns() -> None:
+    frame = _forecast_frame().assign(yhat_p5=[1.0, 2.0, 3.0], yhat_p05=[1.0, 2.0, 3.0])
+
+    events = validate_forecast(frame)
+
+    assert any(event.code == "invalid_quantile_columns" for event in events)
+
+
+def test_capture_rejects_noncanonical_quantile_columns(isolated_store: Path) -> None:
+    forecast = pd.DataFrame(
+        {
+            "ds": pd.date_range("2026-01-02", periods=2, freq="D"),
+            "yhat": [1.0, 2.0],
+            "yhat_p5": [0.5, 1.5],
+        }
+    )
+
+    with pytest.raises(ValueError, match=r"Invalid quantile column.*'yhat_p5'"):
+        fops.capture(
+            forecast,
+            project="quantile-test",
+            series_id="s",
+            cutoff=pd.Timestamp("2026-01-01"),
+            store=isolated_store,
+        )
+
+
 def test_schema_from_dict_rejects_unknown_keys() -> None:
     with pytest.raises(ValueError, match="predicton"):
         ForecastSchema.from_dict({"predicton": "yhat"})

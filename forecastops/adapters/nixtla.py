@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any
 
 import pandas as pd
@@ -85,15 +86,28 @@ class NixtlaAdapter(ForecastAdapter):
 
         # Map levels to quantile source columns so pinball loss can consume them.
         quantiles: dict[float, str] = {}
+        skipped_levels: list[int] = []
         for level, sides in intervals.items():
             mapped = _level_to_quantiles(level)
             if mapped is None:
+                skipped_levels.append(level)
                 continue
             lower_q, upper_q = mapped
             if "lo" in sides:
                 quantiles[lower_q / 100.0] = sides["lo"]
             if "hi" in sides:
                 quantiles[upper_q / 100.0] = sides["hi"]
+        if skipped_levels:
+            levels = ", ".join(str(level) for level in sorted(skipped_levels))
+            warnings.warn(
+                "Nixtla adapter skipped interval level(s) "
+                f"{levels} because their bounds do not map to integer percentile "
+                "quantile columns. Coverage and interval width use the widest complete interval bounds when available, "
+                "but pinball loss will not include the skipped level(s). Use levels with "
+                "integer lower/upper percentiles, such as 80 or 90, to emit quantile columns.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Bounds use the widest available interval (highest level with both sides) so
         # coverage / interval_width reflect the broadest band.

@@ -23,8 +23,8 @@ DEFAULT_METRICS = [
     "pinball",
 ]
 
-# Quantile prediction columns, e.g. yhat_p10, yhat_p90 — the capture group is the percentile.
-_QUANTILE_COLUMN = re.compile(r"yhat_p(\d{1,2})")
+# Canonical quantile prediction columns, e.g. yhat_p05, yhat_p90.
+_QUANTILE_COLUMN = re.compile(r"yhat_p(0[1-9]|[1-9]\d)")
 
 # Metrics that need observed actuals; skipped (returning None) when actuals are absent.
 _ACTUAL_METRICS = {"mae", "rmse", "wape", "smape", "bias", "coverage", "pinball"}
