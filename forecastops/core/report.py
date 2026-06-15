@@ -132,7 +132,7 @@ def _render_html(
       <pre>{html.escape(json.dumps(_json_safe(run), indent=2, default=str))}</pre>
     </section>
   </main>
-  <script>window.FORECASTOPS_REPORT={json.dumps(chart_payload)};</script>
+  <script>window.FORECASTOPS_REPORT={_json_for_script(chart_payload)};</script>
   <script>{REPORT_JS}</script>
 </body>
 </html>
@@ -166,6 +166,16 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def _json_for_script(value: Any) -> str:
+    """JSON safe to embed in an executable HTML script tag."""
+    return (
+        json.dumps(value, ensure_ascii=True)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
 def _json_safe(record: dict[str, Any]) -> dict[str, Any]:
     return {key: (None if pd.isna(value) else value) for key, value in record.items()}
 
@@ -179,4 +189,3 @@ REPORT_CSS = """
 REPORT_JS = """
 (function(){const el=document.getElementById('chart');const pts=(window.FORECASTOPS_REPORT.points||[]).filter(p=>p.yhat!==null);if(!pts.length){el.innerHTML='<p class="empty" style="padding:16px">No chartable forecast points.</p>';return;}const w=el.clientWidth||900,h=360,pad=42;const values=[];pts.forEach(p=>['yhat','actual','benchmark_yhat','yhat_lower','yhat_upper'].forEach(k=>{if(p[k]!==null)values.push(p[k]);}));const min=Math.min(...values),max=Math.max(...values),span=max-min||1;const x=i=>pad+(i/(Math.max(pts.length-1,1)))*(w-pad*2);const y=v=>h-pad-((v-min)/span)*(h-pad*2);function path(key){let d='';pts.forEach((p,i)=>{if(p[key]===null)return;d+=(d?'L':'M')+x(i)+','+y(p[key]);});return d;}el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" role="img" aria-label="Forecast chart"><rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/><line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#e4e4e4"/><line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h-pad}" stroke="#e4e4e4"/><path d="${path('yhat')}" fill="none" stroke="#2563eb" stroke-width="2"/><path d="${path('actual')}" fill="none" stroke="#111111" stroke-width="1.8"/><path d="${path('benchmark_yhat')}" fill="none" stroke="#9b9b9b" stroke-width="1.5" stroke-dasharray="5 4"/></svg>`;})();
 """
-

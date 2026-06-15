@@ -86,7 +86,8 @@ def test_runs_aggregates_metrics_and_validation_without_inflation(isolated_store
             MetricRecord("run-warn:wape", "run-warn", "wape", 0.25, 4),
             MetricRecord("run-warn:bias", "run-warn", "bias", -0.1, 4),
             MetricRecord("run-warn:coverage", "run-warn", "coverage", 0.9, 4),
-            MetricRecord("run-warn:skill", "run-warn", "skill_naive", 0.2, 4),
+            MetricRecord("run-warn:skill-mae", "run-warn", "skill_mae", 0.2, 4),
+            MetricRecord("run-warn:skill-wape", "run-warn", "skill_wape", -0.1, 4),
             # Sliced metric must not leak into the overall columns.
             MetricRecord(
                 "run-warn:mae:east", "run-warn", "mae", 99.0, 2, slice_name="region", slice_value="east"
@@ -113,7 +114,7 @@ def test_runs_aggregates_metrics_and_validation_without_inflation(isolated_store
     assert warn["wape"] == 0.25
     assert warn["bias"] == -0.1
     assert warn["coverage"] == 0.9
-    assert warn["skill_vs_benchmark"] == 0.2
+    assert warn["skill_vs_benchmark"] == -0.1
     assert warn["validation_status"] == "WARN"
 
     assert rows["run-fail"]["validation_status"] == "FAIL"

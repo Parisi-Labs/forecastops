@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 import forecastops as fops
 from forecastops.adapters.nixtla import NixtlaAdapter
@@ -144,6 +145,36 @@ def test_plain_point_forecast_has_no_quantiles(isolated_store: Path) -> None:
     quantile_cols = [c for c in artifact.columns if c.startswith("yhat_p")]
     assert quantile_cols == []
     assert "yhat_lower" not in artifact.columns
+    assert "pinball" not in _metric_names(run)
+
+
+def test_unsupported_interval_levels_warn_and_skip_quantiles(isolated_store: Path) -> None:
+    frame = pd.DataFrame(
+        {
+            "unique_id": ["s"] * 2,
+            "ds": pd.date_range("2026-01-02", periods=2, freq="D"),
+            "AutoARIMA": [10.0, 11.0],
+            "AutoARIMA-lo-95": [5.0, 6.0],
+            "AutoARIMA-hi-95": [15.0, 16.0],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="skipped interval level"):
+        run = fops.capture(
+            frame,
+            adapter="nixtla",
+            project="nixtla-unsupported-level",
+            cutoff=pd.Timestamp("2026-01-01"),
+            actuals=_actuals().head(2),
+            store=isolated_store,
+        )
+
+    artifact = read_artifact(run.forecast_artifact_uri)
+    assert "yhat_lower" in artifact.columns
+    assert "yhat_upper" in artifact.columns
+    assert [column for column in artifact.columns if column.startswith("yhat_p")] == []
+    assert "coverage" in _metric_names(run)
+    assert "interval_width" in _metric_names(run)
     assert "pinball" not in _metric_names(run)
 
 

@@ -4,7 +4,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-QUANTILE_COLUMN_PATTERN = re.compile(r"yhat_p\d{1,2}")
+QUANTILE_COLUMN_PATTERN = re.compile(r"yhat_p(?:0[1-9]|[1-9]\d)")
+QUANTILE_LIKE_COLUMN_PATTERN = re.compile(r"yhat_p\d+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,4 +82,3 @@ def quantile_column_name(quantile: float) -> str:
     if scaled <= 0 or scaled >= 100:
         raise ValueError(f"Quantile must be between 0 and 1, got {quantile!r}")
     return f"yhat_p{scaled:02d}"
-

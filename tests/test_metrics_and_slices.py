@@ -38,6 +38,28 @@ def test_smape_and_pinball_values() -> None:
     assert _overall(metrics, "pinball") == pytest.approx(0.3)
 
 
+def test_pinball_ignores_noncanonical_quantile_columns() -> None:
+    frame = pd.DataFrame(
+        {
+            "series_id": ["s", "s"],
+            "cutoff_time": pd.to_datetime(["2026-01-01", "2026-01-01"]),
+            "target_time": pd.to_datetime(["2026-01-02", "2026-01-03"]),
+            "yhat": [11.0, 19.0],
+            "actual": [10.0, 20.0],
+            "yhat_p05": [8.0, 16.0],
+            "yhat_p10": [8.0, 16.0],
+            "yhat_p90": [12.0, 24.0],
+            "yhat_p5": [100.0, 100.0],
+        }
+    )
+    canonical = frame.drop(columns=["yhat_p5"])
+
+    with_extra = evaluate(frame, metrics=["pinball"], run_id="t").metrics
+    without_extra = evaluate(canonical, metrics=["pinball"], run_id="t").metrics
+
+    assert _overall(with_extra, "pinball") == pytest.approx(_overall(without_extra, "pinball"))
+
+
 def test_pinball_skipped_without_quantiles() -> None:
     frame = pd.DataFrame(
         {

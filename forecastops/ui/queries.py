@@ -36,7 +36,7 @@ class UIQueries:
               then metric_value end) as bias,
             max(case when metric_name = 'coverage' and slice_name is null and benchmark_name is null
               then metric_value end) as coverage,
-            max(case when starts_with(metric_name, 'skill_') and slice_name is null then metric_value end)
+            min(case when starts_with(metric_name, 'skill_') and slice_name is null then metric_value end)
               as skill_vs_benchmark
           from evaluation_metrics
           group by run_id
@@ -272,4 +272,3 @@ def _json_safe(value: Any) -> Any:
     if pd.isna(value):
         return None
     return value
-

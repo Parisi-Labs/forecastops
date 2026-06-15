@@ -61,6 +61,27 @@ def test_capture_persists_artifacts_metrics_and_report(isolated_store: Path) -> 
     assert "Forecast vs actual" in report_path.read_text(encoding="utf-8")
 
 
+def test_report_escapes_json_script_payload(isolated_store: Path) -> None:
+    malicious_series = '</script><script>window.FORECASTOPS_PWNED=1</script>'
+    run = fops.capture(
+        pd.DataFrame(
+            {
+                "series_id": [malicious_series],
+                "target_time": [pd.Timestamp("2026-01-02")],
+                "yhat": [1.0],
+            }
+        ),
+        project="report-escape-test",
+        cutoff=pd.Timestamp("2026-01-01"),
+        store=isolated_store,
+    )
+
+    rendered = report(run, store=isolated_store).read_text(encoding="utf-8")
+
+    assert malicious_series not in rendered
+    assert "\\u003c/script\\u003e\\u003cscript\\u003ewindow.FORECASTOPS_PWNED=1" in rendered
+
+
 def test_ui_api_smoke(isolated_store: Path) -> None:
     cutoff = pd.Timestamp("2026-01-01")
     run = fops.capture(
@@ -76,4 +97,3 @@ def test_ui_api_smoke(isolated_store: Path) -> None:
     assert client.get("/api/runs").json()[0]["run_id"] == run.run_id
     assert client.get(f"/api/runs/{run.run_id}").json()["run_id"] == run.run_id
     assert len(client.get(f"/api/runs/{run.run_id}/forecast-points").json()) == 2
-
