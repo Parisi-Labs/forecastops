@@ -19,6 +19,7 @@ DEFAULT_METRICS = [
     "bias",
     "count",
     "coverage",
+    "coverage_gap",
     "interval_width",
     "pinball",
 ]
@@ -27,7 +28,7 @@ DEFAULT_METRICS = [
 _QUANTILE_COLUMN = re.compile(r"yhat_p(0[1-9]|[1-9]\d)")
 
 # Metrics that need observed actuals; skipped (returning None) when actuals are absent.
-_ACTUAL_METRICS = {"mae", "rmse", "wape", "smape", "bias", "coverage", "pinball"}
+_ACTUAL_METRICS = {"mae", "rmse", "wape", "smape", "bias", "coverage", "coverage_gap", "pinball"}
 
 
 @dataclass(slots=True)
@@ -239,7 +240,7 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
             return None
         return float(frame["abs_error"].sum() / denominator)
     if metric_name == "smape":
-        # Symmetric MAPE as a ratio in [0, 2] (consistent with wape, not a percentage).
+        # Symmetric MAPE as a ratio in [0, 2], not a percentage.
         actual = pd.to_numeric(frame["actual"], errors="coerce")
         predicted = pd.to_numeric(frame["yhat"], errors="coerce")
         denominator = actual.abs() + predicted.abs()
@@ -250,17 +251,22 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
     if metric_name == "pinball":
         return _pinball_loss(frame)
     if metric_name == "bias":
+        # Mean signed error: positive means the forecast overestimated actuals.
         return float(frame["error"].mean())
     if metric_name == "coverage":
-        if not {"yhat_lower", "yhat_upper"}.issubset(frame.columns):
+        coverage = _coverage_rate(frame)
+        if coverage is None:
             return None
-        actual = pd.to_numeric(frame["actual"], errors="coerce")
-        lower = pd.to_numeric(frame["yhat_lower"], errors="coerce")
-        upper = pd.to_numeric(frame["yhat_upper"], errors="coerce")
-        valid = actual.notna() & lower.notna() & upper.notna()
-        if not bool(valid.any()):
+        return coverage[0]
+    if metric_name == "coverage_gap":
+        coverage = _coverage_rate(frame)
+        if coverage is None:
             return None
-        return float(((actual >= lower) & (actual <= upper))[valid].mean())
+        empirical, valid = coverage
+        nominal = _nominal_interval_level(frame, valid)
+        if nominal is None:
+            return None
+        return float(empirical - nominal)
     if metric_name == "interval_width":
         if not {"yhat_lower", "yhat_upper"}.issubset(frame.columns):
             return None
@@ -269,6 +275,35 @@ def _metric_value(frame: pd.DataFrame, metric_name: str) -> float | None:
         )
         return float(width.mean())
     return None
+
+
+def _coverage_rate(frame: pd.DataFrame) -> tuple[float, pd.Series] | None:
+    if not {"yhat_lower", "yhat_upper"}.issubset(frame.columns):
+        return None
+    actual = pd.to_numeric(frame["actual"], errors="coerce")
+    lower = pd.to_numeric(frame["yhat_lower"], errors="coerce")
+    upper = pd.to_numeric(frame["yhat_upper"], errors="coerce")
+    valid = actual.notna() & lower.notna() & upper.notna()
+    if not bool(valid.any()):
+        return None
+    return float(((actual >= lower) & (actual <= upper))[valid].mean()), valid
+
+
+def _nominal_interval_level(frame: pd.DataFrame, valid: pd.Series) -> float | None:
+    if "interval_level" not in frame.columns:
+        return None
+    levels = pd.to_numeric(frame["interval_level"], errors="coerce")
+    levels = levels[valid].dropna()
+    if levels.empty:
+        return None
+    levels = levels[np.isfinite(levels)]
+    if levels.empty:
+        return None
+    levels = levels.where(levels <= 1.0, levels / 100.0)
+    levels = levels[(levels > 0.0) & (levels < 1.0)]
+    if levels.empty:
+        return None
+    return float(levels.mean())
 
 
 def _pinball_loss(frame: pd.DataFrame) -> float | None:

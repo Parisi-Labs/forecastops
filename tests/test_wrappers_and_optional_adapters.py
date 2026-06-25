@@ -109,6 +109,7 @@ def test_metric_emitter_uses_safe_names() -> None:
     emitter.emit([record], base_attributes={"forecast.project.name": "demo", "target_time": "unsafe"})
 
     assert metric_name("skill_mae") == "forecast.benchmark.skill"
+    assert metric_name("coverage_gap") == "forecast.probabilistic.coverage_gap"
     assert emitter.emitted[0][2] == {
         "forecast.project.name": "demo",
         "forecast.metric.name": "skill_mae",

@@ -40,6 +40,6 @@ METRIC_ERROR_RMSE = "forecast.error.rmse"
 METRIC_ERROR_WAPE = "forecast.error.wape"
 METRIC_ERROR_BIAS = "forecast.error.bias"
 METRIC_PROBABILISTIC_COVERAGE = "forecast.probabilistic.coverage"
+METRIC_PROBABILISTIC_COVERAGE_GAP = "forecast.probabilistic.coverage_gap"
 METRIC_PROBABILISTIC_INTERVAL_WIDTH = "forecast.probabilistic.interval_width"
 METRIC_BENCHMARK_SKILL = "forecast.benchmark.skill"
-

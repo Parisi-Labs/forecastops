@@ -36,6 +36,8 @@ class UIQueries:
               then metric_value end) as bias,
             max(case when metric_name = 'coverage' and slice_name is null and benchmark_name is null
               then metric_value end) as coverage,
+            max(case when metric_name = 'coverage_gap' and slice_name is null and benchmark_name is null
+              then metric_value end) as coverage_gap,
             min(case when starts_with(metric_name, 'skill_') and slice_name is null then metric_value end)
               as skill_vs_benchmark
           from evaluation_metrics
@@ -58,6 +60,7 @@ class UIQueries:
           m.wape,
           m.bias,
           m.coverage,
+          m.coverage_gap,
           m.skill_vs_benchmark,
           coalesce(v.validation_status, 'PASS') as validation_status
         from runs r

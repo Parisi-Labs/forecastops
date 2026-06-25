@@ -130,6 +130,7 @@ function renderRunsView(params) {
             <th data-sort="wape" class="num">WAPE</th>
             <th data-sort="bias" class="num">Bias</th>
             <th data-sort="coverage" class="num">Coverage</th>
+            <th data-sort="coverage_gap" class="num">Gap</th>
             <th data-sort="skill_vs_benchmark" class="num">Skill</th>
             <th data-sort="validation_status">Validation</th>
           </tr>
@@ -207,7 +208,7 @@ function updateRunsTable() {
   });
   const tbody = $("#runsTable tbody");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="12" style="color:var(--muted)">No runs match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="color:var(--muted)">No runs match the current filters.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -224,6 +225,7 @@ function updateRunsTable() {
         <td class="num">${fmt(run.wape)}</td>
         <td class="num">${fmt(run.bias)}</td>
         <td class="num">${fmt(run.coverage)}</td>
+        <td class="num">${fmt(run.coverage_gap)}</td>
         <td class="num">${fmt(run.skill_vs_benchmark)}</td>
         <td><span class="status ${escapeHtml(run.validation_status || "")}">${escapeHtml(run.validation_status || "–")}</span></td>
       </tr>
@@ -309,6 +311,7 @@ async function renderRunView(runId) {
       ${metricCard("WAPE", metricLookup.wape, "weighted abs pct error")}
       ${metricCard("Bias", metricLookup.bias, "mean error")}
       ${metricCard("Coverage", metricLookup.coverage, "interval hit rate")}
+      ${metricCard("Coverage gap", metricLookup.coverage_gap, "empirical − nominal")}
       ${metricCard("Points", run.points_count, `${fmt(run.series_count, 0)} series`, true)}
     </div>
     <div class="run-layout">
