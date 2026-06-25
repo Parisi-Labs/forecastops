@@ -69,7 +69,8 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 `fops ui` serves a read-only explorer for the local store:
 
 - **Runs** — every captured run with horizon, points, MAE, WAPE, bias,
-  coverage, skill, and validation status; filterable and sortable.
+  coverage, coverage gap, skill, and validation status; filterable and
+  sortable.
 - **Run detail** — headline metrics, a forecast inspector with one chart per
   series, and a diagnostics cockpit: residual distribution, error by horizon,
   per-series worst offenders, and per-regime breakdowns — plus metrics,
@@ -85,9 +86,10 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 - `capture`: normalize forecasts from existing workflows.
 - `ForecastSchema`: map arbitrary dataframe columns to canonical semantics.
 - `validate`: catch schema, timestamp, duplicate, interval, and leakage issues.
-- `evaluate`: compute MAE, RMSE, WAPE, sMAPE, bias, coverage, interval width,
-  pinball loss (for quantile forecasts), and count — sliced by horizon and by
-  any categorical columns you keep (e.g. region, holiday_flag, event_type).
+- `evaluate`: compute MAE, RMSE, WAPE, sMAPE, bias, coverage, coverage gap,
+  interval width, pinball loss (for quantile forecasts), and count — sliced by
+  horizon and by any categorical columns you keep (e.g. region, holiday_flag,
+  event_type).
 - `compare`: calculate benchmark metrics and skill.
 - `backtest`: evaluate a rolling-origin forecast panel as one grouped run set,
   with per-cutoff and aggregate (mean/std) metrics.
@@ -100,6 +102,22 @@ Open [http://127.0.0.1:4784](http://127.0.0.1:4784) after starting the UI.
 - local store: `.forecastops/forecastops.duckdb` plus Parquet artifacts.
 - UI: local read-only browser explorer for runs, metrics, residuals, validation,
   artifacts, and run differences.
+
+## Metric Conventions
+
+ForecastOps stores metric values as machine-readable ratios or forecast-unit
+values, not display-formatted percentages:
+
+- MAE and RMSE are in the same units as the forecast target.
+- WAPE is a ratio, so `0.12` means 12% weighted absolute percentage error.
+- sMAPE is the full symmetric MAPE ratio `2 * abs(yhat - actual) /
+  (abs(actual) + abs(yhat))`, with values in `[0, 2]`.
+- Bias is mean signed error, `mean(yhat - actual)`. Positive bias means the
+  forecast overestimated actuals; negative bias means it underestimated them.
+- Coverage is the empirical interval hit rate. When `interval_level` is
+  available as either a ratio (`0.9`) or percentage (`90`), ForecastOps also
+  emits `coverage_gap = coverage - interval_level`. A positive gap means
+  overcoverage; a negative gap means undercoverage.
 
 ## Privacy Defaults
 

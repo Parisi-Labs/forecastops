@@ -15,8 +15,24 @@ METRIC_NAME_MAP = {
     "smape": "forecast.error.smape",
     "bias": "forecast.error.bias",
     "coverage": "forecast.probabilistic.coverage",
+    "coverage_gap": "forecast.probabilistic.coverage_gap",
     "interval_width": "forecast.probabilistic.interval_width",
     "pinball": "forecast.probabilistic.pinball",
+}
+
+METRIC_DESCRIPTION_MAP = {
+    "forecast.error.mae": "Mean absolute error in forecast units.",
+    "forecast.error.rmse": "Root mean squared error in forecast units.",
+    "forecast.error.wape": "Weighted absolute percentage error as a ratio.",
+    "forecast.error.smape": "Symmetric MAPE as a ratio in [0, 2].",
+    "forecast.error.bias": "Mean signed error in forecast units; positive means overestimate.",
+    "forecast.probabilistic.coverage": "Empirical interval hit rate as a ratio.",
+    "forecast.probabilistic.coverage_gap": (
+        "Empirical coverage minus nominal interval level; positive means overcoverage."
+    ),
+    "forecast.probabilistic.interval_width": "Mean prediction interval width in forecast units.",
+    "forecast.probabilistic.pinball": "Mean pinball loss across quantile forecast columns.",
+    "forecast.benchmark.skill": "Benchmark skill score; positive means better than benchmark.",
 }
 
 _INSTRUMENT_SCOPE = "forecastops"
@@ -36,7 +52,10 @@ def _gauge(name: str) -> otel_metrics._Gauge:
     gauge = _GAUGES.get(name)
     if gauge is None:
         meter = otel_metrics.get_meter(_INSTRUMENT_SCOPE)
-        gauge = meter.create_gauge(name, description=f"ForecastOps aggregate metric {name}")
+        gauge = meter.create_gauge(
+            name,
+            description=METRIC_DESCRIPTION_MAP.get(name, f"ForecastOps aggregate metric {name}"),
+        )
         _GAUGES[name] = gauge
     return gauge
 

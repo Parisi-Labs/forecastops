@@ -103,6 +103,48 @@ def test_capture_includes_new_metrics(isolated_store: Path) -> None:
     assert any(metric.metric_name == "smape" for metric in run.metrics)
 
 
+def test_capture_emits_coverage_gap_when_interval_level_is_available(isolated_store: Path) -> None:
+    forecast = pd.DataFrame(
+        {
+            "target_time": pd.date_range("2026-01-02", periods=4, freq="D"),
+            "prediction": [10.0, 11.0, 12.0, 13.0],
+            "lower": [9.0, 10.0, 11.0, 12.0],
+            "upper": [11.0, 12.0, 13.0, 14.0],
+            "level": [90, 90, 90, 90],
+        }
+    )
+    actuals = pd.DataFrame(
+        {
+            "target_time": pd.date_range("2026-01-02", periods=4, freq="D"),
+            "actual": [10.0, 11.0, 12.0, 15.0],
+        }
+    )
+
+    run = fops.capture(
+        forecast,
+        project="coverage-gap-test",
+        schema=fops.ForecastSchema(
+            target_time="target_time",
+            prediction="prediction",
+            lower="lower",
+            upper="upper",
+            interval_level="level",
+        ),
+        cutoff=pd.Timestamp("2026-01-01"),
+        series_id="s",
+        actuals=actuals,
+        store=isolated_store,
+    )
+    metrics = {
+        metric.metric_name: metric.metric_value
+        for metric in run.metrics
+        if metric.slice_name is None and metric.benchmark_name is None
+    }
+
+    assert metrics["coverage"] == 0.75
+    assert metrics["coverage_gap"] == pytest.approx(-0.15)
+
+
 def test_capture_slices_metrics_by_extra_column(isolated_store: Path) -> None:
     times = pd.date_range("2026-01-02", periods=4, freq="D")
     forecast = pd.DataFrame(
