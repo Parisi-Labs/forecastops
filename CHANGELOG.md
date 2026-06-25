@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-06-25
+
+### Added
+
+- `coverage_gap` is now computed by default when forecast intervals include
+  `interval_level`, making observed-vs-expected interval calibration visible
+  alongside coverage.
+- Coverage gap is shown in the local UI runs table, run detail metric cards,
+  reports, and OpenTelemetry aggregate metrics.
+
+### Changed
+
+- Interval levels can be supplied as ratios (`0.9`) or percentages (`90`) for
+  coverage-gap computation.
+- Metric documentation now spells out bias sign, sMAPE scale, coverage scale,
+  and coverage-gap interpretation.
+- GitHub Actions now type-check each CI job against its active Python version,
+  avoiding third-party stub syntax failures on Python 3.12.
+- CI now uses `actions/checkout@v7`.
+
+### Fixed
+
+- The runs dashboard now reports the worst benchmark skill score instead of the
+  most favorable score.
+- Static report JSON is escaped safely for executable `<script>` contexts.
+- Quantile-like columns are validated more strictly so non-canonical names are
+  not double-counted as quantile forecasts.
+- The Nixtla adapter now warns when interval levels cannot map cleanly to
+  integer percentile quantile columns.
+
 ## 0.2.1 — 2026-06-12
 
 ### Added
